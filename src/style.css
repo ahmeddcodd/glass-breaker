@@ -1,10 +1,16 @@
 :root {
-  --ui-cyan: #7fe6ff;
-  --ui-white: #f2fbff;
-  --ui-dim: rgba(190, 225, 245, 0.55);
-  --ui-danger: #ff5468;
+  --ui-cyan: #8fecff;
+  --ui-aqua: #b8f6ff; /* brighter highlight for headings / emphasis */
+  --ui-white: #f4fdff;
+  --ui-dim: rgba(196, 224, 240, 0.72); /* labels: crisper than before */
+  --ui-faint: rgba(178, 210, 230, 0.5); /* the quietest supporting text */
+  --ui-danger: #ff5f72;
   --ui-gold: #ffd977;
-  --font: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --ui-ink: #041019; /* dark text on bright buttons */
+  /* Modern geometric system stack — resolves to the best native UI face per
+     platform (Inter/SF/Segoe Variable), no web fetch (Playables is offline). */
+  --font: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont,
+    'Segoe UI Variable Display', 'Segoe UI', system-ui, 'Helvetica Neue', Arial, sans-serif;
 }
 
 * {
@@ -20,6 +26,10 @@ body {
   overflow: hidden;
   background: #010409;
   font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'ss01', 'cv01', 'tnum';
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
@@ -98,8 +108,9 @@ body {
 .hud-value {
   font-size: clamp(20px, 3.4vh, 34px);
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-shadow: 0 0 12px rgba(127, 230, 255, 0.55);
+  letter-spacing: 0.01em;
+  color: var(--ui-white);
+  text-shadow: 0 0 14px rgba(143, 236, 255, 0.5);
   font-variant-numeric: tabular-nums;
 }
 
@@ -483,53 +494,70 @@ body {
 }
 
 .game-title {
-  font-size: clamp(34px, 6.4vh, 64px);
-  font-weight: 900;
-  letter-spacing: 0.14em;
-  line-height: 1.05;
+  font-size: clamp(38px, 7vh, 68px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 0.98;
   text-transform: uppercase;
-  background: linear-gradient(180deg, #ffffff 20%, #7fe6ff 70%, #3fa8ff 100%);
+  /* luminous, slightly-angled sheen — bright top-left highlight easing into
+     electric cyan; stays vivid at the base instead of the old muddy mid-blue */
+  background: linear-gradient(
+    155deg,
+    #ffffff 0%,
+    #dbf7ff 26%,
+    #79e4ff 58%,
+    #47c7ff 82%,
+    #6fd8ff 100%
+  );
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 18px rgba(90, 200, 255, 0.55));
+  color: transparent;
+  /* layered glow: tight bright core + soft wide halo for neon depth */
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.25))
+    drop-shadow(0 0 10px rgba(120, 225, 255, 0.75))
+    drop-shadow(0 0 34px rgba(60, 170, 255, 0.45));
 }
 
 .game-subtitle {
-  margin-top: 1.6vh;
+  margin-top: 2vh;
   font-size: clamp(12px, 1.8vh, 17px);
-  letter-spacing: 0.3em;
+  font-weight: 500;
+  letter-spacing: 0.32em;
   text-transform: uppercase;
-  color: var(--ui-dim);
+  color: var(--ui-cyan);
+  opacity: 0.82;
+  text-shadow: 0 0 12px rgba(143, 236, 255, 0.35);
 }
 
 .tap-hint {
   margin-top: 9vh;
   font-size: clamp(16px, 2.6vh, 26px);
   font-weight: 700;
-  letter-spacing: 0.34em;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
-  color: var(--ui-white);
-  text-shadow: 0 0 18px rgba(127, 230, 255, 0.95);
+  color: var(--ui-aqua);
+  text-shadow: 0 0 10px rgba(143, 236, 255, 0.7), 0 0 26px rgba(90, 200, 255, 0.5);
   animation: prompt-pulse 1.4s ease-in-out infinite;
 }
 
 .gameover-title {
   font-size: clamp(24px, 4.2vh, 42px);
-  font-weight: 900;
-  letter-spacing: 0.3em;
+  font-weight: 800;
+  letter-spacing: 0.26em;
   text-transform: uppercase;
-  color: var(--ui-white);
-  text-shadow: 0 0 20px rgba(127, 230, 255, 0.6);
+  color: var(--ui-aqua);
+  text-shadow: 0 0 22px rgba(143, 236, 255, 0.55);
 }
 
 .final-score {
   margin-top: 3vh;
   font-size: clamp(48px, 9vh, 90px);
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   line-height: 1;
   color: var(--ui-white);
-  text-shadow: 0 0 30px rgba(127, 230, 255, 0.8);
+  text-shadow: 0 0 12px rgba(180, 245, 255, 0.6), 0 0 40px rgba(90, 200, 255, 0.5);
   font-variant-numeric: tabular-nums;
 }
 
@@ -581,14 +609,15 @@ body {
   font-family: var(--font);
   font-size: clamp(15px, 2.4vh, 24px);
   font-weight: 800;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.26em;
   text-transform: uppercase;
-  color: #04121e;
-  background: linear-gradient(180deg, #d8f6ff 0%, #7fe6ff 100%);
+  color: var(--ui-ink);
+  background: linear-gradient(180deg, #ffffff 0%, #a6efff 46%, #7fe6ff 100%);
   border: none;
   border-radius: 999px;
   cursor: pointer;
-  box-shadow: 0 0 26px rgba(127, 230, 255, 0.5), inset 0 -3px 0 rgba(30, 120, 170, 0.4);
+  box-shadow: 0 0 30px rgba(143, 236, 255, 0.55), inset 0 -3px 0 rgba(30, 120, 170, 0.4),
+    inset 0 2px 0 rgba(255, 255, 255, 0.6);
   transition: transform 0.12s;
 }
 
