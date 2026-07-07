@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#04070f" />
+    <meta
+      name="description"
+      content="Glass Breaker — a fast 3D glass-smashing arcade runner. Tap to launch metal spheres, shatter crystal hazards, chain combos and survive the rush."
+    />
+    <meta property="og:title" content="Glass Breaker" />
+    <meta
+      property="og:description"
+      content="Break the path. Save your spheres. Survive the rush. A free 3D arcade runner — play instantly in your browser."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A0%3C/text%3E%3C/svg%3E"
+    />
+    <title>Glass Breaker</title>
+    <!-- YouTube Playables SDK — must load before any game code; no-op elsewhere -->
+    <script src="https://www.youtube.com/game_api/v1"></script>
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="game-canvas"></canvas>
+      <div id="ui"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

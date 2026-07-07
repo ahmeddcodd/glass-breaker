@@ -1,0 +1,125 @@
+// YouTube Playables SDK wrapper — the only module allowed to touch the
+// `ytgame` global. Outside the Playables environment (local dev, Vercel
+// preview) every call degrades gracefully: lifecycle signals become no-ops
+// and the best score falls back to localStorage.
+// SDK reference: https://developers.google.com/youtube/gaming/playables/reference/sdk
+
+import { BEST_SCORE_KEY } from './config';
+
+interface YtGame {
+  IN_PLAYABLES_ENV: boolean;
+  SDK_VERSION: string;
+  game: {
+    firstFrameReady(): void;
+    gameReady(): void;
+    loadData(): Promise<string>;
+    saveData(data: string): Promise<void>;
+  };
+  engagement: {
+    sendScore(score: { value: number }): Promise<void>;
+  };
+  system: {
+    isAudioEnabled(): boolean;
+    onAudioEnabledChange(callback: (enabled: boolean) => void): () => void;
+    onPause(callback: () => void): () => void;
+    onResume(callback: () => void): () => void;
+  };
+  health: {
+    logError(): void;
+    logWarning(): void;
+  };
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var ytgame: YtGame | undefined;
+}
+
+const sdk = typeof ytgame !== 'undefined' ? ytgame : undefined;
+
+export const inPlayablesEnv = !!sdk?.IN_PLAYABLES_ENV;
+
+/** Certification: loadData must resolve before the first saveData call. */
+let loadDone = false;
+let pendingBest: number | null = null;
+
+/** Signal that rendering has begun (first frame drawn). MUST be called. */
+export function firstFrameReady() {
+  sdk?.game.firstFrameReady();
+}
+
+/** Signal the game is interactive — YouTube hides its spinner on this. */
+export function gameReady() {
+  sdk?.game.gameReady();
+}
+
+/** Best score from cloud save (in-env) or localStorage (everywhere else). */
+export async function loadBestScore(): Promise<number> {
+  let best = 0;
+  if (!inPlayablesEnv) {
+    try {
+      best = Number(localStorage.getItem(BEST_SCORE_KEY)) || 0;
+    } catch {
+      best = 0;
+    }
+  } else {
+    try {
+      const raw = await sdk!.game.loadData();
+      if (raw) {
+        const saved = (JSON.parse(raw) as { best?: unknown }).best;
+        if (typeof saved === 'number' && Number.isFinite(saved)) best = saved;
+      }
+    } catch {
+      // corrupt or unavailable save — start fresh rather than break the game
+      sdk!.health.logWarning();
+    }
+  }
+  loadDone = true;
+  // flush a save that raced ahead of the load (defensive; save order per cert)
+  if (pendingBest !== null) {
+    const queued = pendingBest;
+    pendingBest = null;
+    saveBestScore(Math.max(queued, best));
+  }
+  return best;
+}
+
+/** Persist the best score. Queued until loadBestScore has resolved. */
+export function saveBestScore(best: number) {
+  if (!loadDone) {
+    pendingBest = best;
+    return;
+  }
+  if (!inPlayablesEnv) {
+    try {
+      localStorage.setItem(BEST_SCORE_KEY, String(best));
+    } catch {
+      // localStorage may be unavailable in some embeds — best just won't persist
+    }
+    return;
+  }
+  sdk!.game.saveData(JSON.stringify({ best })).catch(() => sdk!.health.logError());
+}
+
+/** Report the finished run's score to YouTube leaderboards/history. */
+export function sendScore(value: number) {
+  if (!inPlayablesEnv) return;
+  sdk!.engagement.sendScore({ value: Math.max(0, Math.floor(value)) }).catch(() => sdk!.health.logError());
+}
+
+/** YouTube's audio toggle. Defaults to enabled outside the env. */
+export function isAudioEnabled(): boolean {
+  return inPlayablesEnv ? sdk!.system.isAudioEnabled() : true;
+}
+
+export function onAudioEnabledChange(callback: (enabled: boolean) => void) {
+  sdk?.system.onAudioEnabledChange(callback);
+}
+
+export function onPause(callback: () => void) {
+  sdk?.system.onPause(callback);
+}
+
+export function onResume(callback: () => void) {
+  sdk?.system.onResume(callback);
+}
