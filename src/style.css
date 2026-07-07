@@ -241,14 +241,29 @@ body {
   right: 8%;
   bottom: 14%;
   text-align: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+#prompt-main {
+  display: block;
   font-size: clamp(15px, 2.4vh, 24px);
   font-weight: 600;
   letter-spacing: 0.28em;
   text-transform: uppercase;
   color: var(--ui-white);
   text-shadow: 0 0 16px rgba(127, 230, 255, 0.9);
-  opacity: 0;
-  transition: opacity 0.3s;
+}
+
+#prompt-sub {
+  display: block;
+  margin-top: 0.9vh;
+  font-size: clamp(11px, 1.7vh, 16px);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ui-dim);
+  text-shadow: 0 0 10px rgba(127, 230, 255, 0.5);
 }
 
 #prompt.visible {

@@ -80,6 +80,13 @@ export class Game {
   private firstBreakDone = false;
   private lowAmmoWarned = false;
 
+  // Onboarding tutorial: a short sequenced lesson shown once per session on the
+  // first run (tap-to-shoot → bank shots off walls → crystals refill spheres).
+  // `tutorialDone` persists across restarts so retries aren't re-taught.
+  private tutorialDone = false;
+  private tutorialStep = 0; // 0 not started, 1 tap, 2 bank shots, 3 crystals, 4 finished
+  private tutorialTimer = 0; // counts run time within the current step
+
   // HUD change caching so the DOM isn't touched every frame
   private lastScore = -1;
   private lastAmmo = -1;
@@ -410,6 +417,7 @@ export class Game {
 
     this.handleCollisions(worldDt);
     this.score.update(worldDt, speed * worldDt);
+    this.updateTutorial(dt); // real time — the lesson shouldn't stretch in slow rift
     this.refreshHud(distance, dt);
   }
 
@@ -509,7 +517,9 @@ export class Game {
 
     if (!this.firstShotFired) {
       this.firstShotFired = true;
-      this.ui.prompt('');
+      // Outside the tutorial, clear the "Tap to shoot" reminder now. During the
+      // tutorial, updateTutorial advances to the bank-shot lesson instead.
+      if (this.tutorialStep >= 4) this.ui.prompt('');
     }
     this.checkLowAmmo();
   }
@@ -581,7 +591,9 @@ export class Game {
 
     if (!this.firstBreakDone) {
       this.firstBreakDone = true;
-      this.ui.prompt('Hit crystals for more spheres', 2600);
+      // During the tutorial the crystals lesson is shown by updateTutorial (step 3);
+      // on later runs, surface it here as a brief one-off reminder.
+      if (this.tutorialStep >= 4) this.ui.prompt('Hit crystals for more spheres', 2600);
     }
   }
 
@@ -645,6 +657,59 @@ export class Game {
     }
   }
 
+  // -------------------------------------------------------------- tutorial
+
+  /** Render one onboarding beat (main line + optional explanatory sub-line). */
+  private showTutorialStep(step: number) {
+    this.tutorialTimer = 0;
+    if (step === 1) {
+      this.ui.prompt('Tap to shoot', 0, 'Aim at the glass ahead');
+    } else if (step === 2) {
+      this.ui.prompt('Bank shots off the walls', 0, 'Floor · ceiling · sides — no break needed');
+    } else if (step === 3) {
+      this.ui.prompt('Hit crystals for more spheres', 0, 'Green gems refill your spheres');
+    }
+  }
+
+  /**
+   * Drive the opening onboarding sequence (first session run only). Beats
+   * advance on the matching player action — but also time out on their own so
+   * the lesson keeps flowing even for a passive player, then hands the prompt
+   * line back to the normal contextual messages.
+   */
+  private updateTutorial(dt: number) {
+    if (this.tutorialStep >= 4) return;
+    this.tutorialTimer += dt;
+
+    // Step 1 (tap-to-shoot): advance once they shoot, or after a patient hold.
+    if (this.tutorialStep === 1) {
+      if (this.firstShotFired || this.tutorialTimer > 6) this.advanceTutorial(2);
+      return;
+    }
+    // Step 2 (bank shots): a timed lesson — read it, then move on.
+    if (this.tutorialStep === 2) {
+      if (this.tutorialTimer > 4.5) this.advanceTutorial(3);
+      return;
+    }
+    // Step 3 (crystals): always readable for a beat; once seen, a break ends it
+    // a little sooner, otherwise it times out on its own.
+    if (this.tutorialStep === 3) {
+      if ((this.firstBreakDone && this.tutorialTimer > 2) || this.tutorialTimer > 4.5) this.finishTutorial();
+    }
+  }
+
+  private advanceTutorial(step: number) {
+    this.tutorialStep = step;
+    this.showTutorialStep(step);
+  }
+
+  private finishTutorial() {
+    this.tutorialStep = 4;
+    this.tutorialDone = true;
+    // only clear the line if a contextual prompt (e.g. low ammo) hasn't taken over
+    if (!this.ammo.low) this.ui.prompt('');
+  }
+
   // ------------------------------------------------------------ game state
 
   private startRun() {
@@ -678,7 +743,17 @@ export class Game {
     this.ui.showPlaying();
     this.ui.setLowAmmo(false);
     this.ui.setCombo(0, 1);
-    this.ui.prompt('Tap to shoot');
+
+    // First run of the session gets the full onboarding sequence; later runs
+    // just get a one-line reminder so retries aren't slowed down.
+    this.tutorialTimer = 0;
+    if (this.tutorialDone) {
+      this.tutorialStep = 4;
+      this.ui.prompt('Tap to shoot');
+    } else {
+      this.tutorialStep = 1;
+      this.showTutorialStep(1);
+    }
     this.refreshHud(0);
 
     this.state = 'playing';

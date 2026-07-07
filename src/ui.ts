@@ -19,6 +19,8 @@ export class UI {
   private comboEl: HTMLElement;
   private hudEl: HTMLElement;
   private promptEl: HTMLElement;
+  private promptMainEl: HTMLElement;
+  private promptSubEl: HTMLElement;
   private toastEl: HTMLElement;
   private popupLayer: HTMLElement;
   private vignetteEl: HTMLElement;
@@ -55,7 +57,7 @@ export class UI {
         </div>
       </div>
       <div id="zone-toast"></div>
-      <div id="prompt"></div>
+      <div id="prompt"><span id="prompt-main"></span><span id="prompt-sub"></span></div>
       <div id="popup-layer"></div>
       <div id="vignette"></div>
       <div id="hit-flash"></div>
@@ -88,6 +90,8 @@ export class UI {
     this.distanceEl = get('distance-value');
     this.comboEl = get('combo-badge');
     this.promptEl = get('prompt');
+    this.promptMainEl = get('prompt-main');
+    this.promptSubEl = get('prompt-sub');
     this.toastEl = get('zone-toast');
     this.popupLayer = get('popup-layer');
     this.vignetteEl = get('vignette');
@@ -181,8 +185,9 @@ export class UI {
     }
   }
 
-  /** Tutorial / feedback line at the bottom of the screen. */
-  prompt(text: string, durationMs = 0) {
+  /** Tutorial / feedback line at the bottom of the screen. An optional second
+   *  line (smaller, dimmer, un-spaced) carries longer explanatory hints. */
+  prompt(text: string, durationMs = 0, subText = '') {
     if (this.promptTimer !== null) {
       clearTimeout(this.promptTimer);
       this.promptTimer = null;
@@ -191,7 +196,9 @@ export class UI {
       this.promptEl.classList.remove('visible');
       return;
     }
-    this.promptEl.textContent = text;
+    this.promptMainEl.textContent = text;
+    this.promptSubEl.textContent = subText;
+    this.promptSubEl.style.display = subText ? '' : 'none';
     this.promptEl.classList.add('visible');
     if (durationMs > 0) {
       this.promptTimer = window.setTimeout(() => this.promptEl.classList.remove('visible'), durationMs);
