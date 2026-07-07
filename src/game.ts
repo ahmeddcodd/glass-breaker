@@ -154,8 +154,8 @@ export class Game {
       this.ui.setPowerUp(null, 0);
     };
 
-    const input = new InputManager(engine, canvas);
-    input.onTap = (x, y, cssX, cssY) => this.handleTap(x, y, cssX, cssY);
+    const input = new InputManager(canvas);
+    input.onTap = (cssX, cssY) => this.handleTap(cssX, cssY);
 
     // YouTube Playables wiring (no-ops outside the Playables environment):
     // cloud-saved best score, the platform mute toggle, and pause/resume.
@@ -172,11 +172,20 @@ export class Game {
       this.audio.resume();
     });
 
-    // QA hook (?qa in the URL): trigger a power-up collection exactly as a
-    // real pickup would — used by automated device testing, inert otherwise.
+    // QA hooks (?qa in the URL) — used by automated device testing, inert otherwise.
     if (new URLSearchParams(location.search).has('qa')) {
-      (globalThis as { __qaPower?: (k: 'multishot' | 'slowrift' | 'shield') => void }).__qaPower = (k) =>
-        this.collectPower(k, 0.5, 0.4);
+      const g = globalThis as {
+        __qaPower?: (k: 'multishot' | 'slowrift' | 'shield') => void;
+        __qaAim?: (cssX: number, cssY: number) => { x: number; y: number; z: number };
+      };
+      // trigger a power-up collection exactly as a real pickup would
+      g.__qaPower = (k) => this.collectPower(k, 0.5, 0.4);
+      // report the world-space aim ray direction for a CSS tap — lets a headless
+      // driver assert aiming is correct/consistent across device pixel ratios.
+      g.__qaAim = (cssX, cssY) => {
+        const r = this.scene.createPickingRay(cssX, cssY, null, this.rig.camera);
+        return { x: r.direction.x, y: r.direction.y, z: r.direction.z };
+      };
     }
 
     this.ui.showStart();
@@ -442,7 +451,7 @@ export class Game {
 
   // ----------------------------------------------------------------- input
 
-  private handleTap(x: number, y: number, cssX: number, cssY: number) {
+  private handleTap(cssX: number, cssY: number) {
     if (this.state !== 'playing') return;
     this.audio.unlock();
     this.ui.tapRipple(cssX, cssY);
@@ -453,7 +462,11 @@ export class Game {
       return;
     }
 
-    const ray = this.scene.createPickingRay(x, y, null, this.rig.camera);
+    // createPickingRay wants client/CSS pixels — it applies hardware scaling
+    // internally, so feeding render pixels would double-count DPR (breaks aim
+    // on mobile). The canvas is CSS-sized to the stage, so cssX/cssY are exactly
+    // the coordinates it expects.
+    const ray = this.scene.createPickingRay(cssX, cssY, null, this.rig.camera);
 
     // Spheres launch faster as the run speeds up, so shots stay viable.
     const fireSpeed =
