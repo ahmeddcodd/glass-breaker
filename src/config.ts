@@ -42,30 +42,51 @@ export interface ZoneBlend {
   a: ZonePalette;
   b: ZonePalette;
   t: number; // 0 = fully a, 1 = fully b
-  index: number; // index of zone b (the zone we're in / entering)
+  index: number; // wrapped palette index of zone b (the zone we're in / entering)
+  prevIndex: number; // wrapped palette index of zone a (crossfading out)
 }
 
 const ZONE_BLEND_LEN = 30; // meters over which palettes crossfade
+// Past the last authored zone the run loops the four platforms forever; each
+// looped zone spans this many meters (matches the last authored span, 1120-680).
+const LOOP_SEG = 440;
 
-/** Which zone a travelled distance falls in, plus the crossfade into it. */
-export function zoneBlendAt(distance: number): ZoneBlend {
-  let idx = 0;
-  for (let i = 0; i < ZONES.length; i++) {
-    if (distance >= ZONES[i].startDist) idx = i;
+/**
+ * Monotonic "zone step" for a travelled distance: 0,1,2,3,4,5,… where the first
+ * ZONES.length steps use the authored startDist values and every step past that
+ * is a fixed LOOP_SEG apart. The palette/variant is `step % ZONES.length`, so
+ * the four platforms cycle endlessly (…Mirror Storm → Crystal Wake → …).
+ * Returns the step plus the start distance of that step (for crossfade math).
+ */
+function zoneStepAt(distance: number): { step: number; start: number } {
+  const last = ZONES.length - 1;
+  const lastStart = ZONES[last].startDist;
+  if (distance < lastStart) {
+    let idx = 0;
+    for (let i = 0; i < ZONES.length; i++) {
+      if (distance >= ZONES[i].startDist) idx = i;
+    }
+    return { step: idx, start: ZONES[idx].startDist };
   }
-  const b = ZONES[idx];
-  const a = ZONES[Math.max(0, idx - 1)];
-  const t = idx === 0 ? 1 : Math.min(1, (distance - b.startDist) / ZONE_BLEND_LEN);
-  return { a, b, t, index: idx };
+  const extra = Math.floor((distance - lastStart) / LOOP_SEG);
+  return { step: last + extra, start: lastStart + extra * LOOP_SEG };
 }
 
-/** Zone index only (no blend) — used for corridor segment styling. */
+/** Which zone a travelled distance falls in, plus the crossfade into it.
+ *  `index` is the wrapped palette index (0..ZONES.length-1); the run loops. */
+export function zoneBlendAt(distance: number): ZoneBlend {
+  const { step, start } = zoneStepAt(distance);
+  const index = step % ZONES.length;
+  const prevIndex = step === 0 ? 0 : (step - 1) % ZONES.length;
+  const b = ZONES[index];
+  const a = ZONES[prevIndex];
+  const t = step === 0 ? 1 : Math.min(1, (distance - start) / ZONE_BLEND_LEN);
+  return { a, b, t, index, prevIndex };
+}
+
+/** Wrapped zone index only (no blend) — used for corridor segment styling. */
 export function zoneIndexAt(distance: number): number {
-  let idx = 0;
-  for (let i = 0; i < ZONES.length; i++) {
-    if (distance >= ZONES[i].startDist) idx = i;
-  }
-  return idx;
+  return zoneStepAt(distance).step % ZONES.length;
 }
 
 export const CONFIG = {
@@ -77,18 +98,18 @@ export const CONFIG = {
     camHeight: 2.2,
   },
 
-  // [elapsed seconds, units/sec] — lerped between steps for smooth ramps
+  // [elapsed seconds, units/sec] — lerped between steps for a continuous ramp
   speedCurve: [
-    [0, 12],
-    [20, 15],
-    [45, 18],
-    [75, 22],
+    [0, 13],
+    [12, 17],
+    [28, 22],
+    [45, 28],
   ] as [number, number][],
   // past the last curve step the speed keeps climbing forever (soft-capped)
   endlessSpeed: {
-    growth: 0.08, // extra units/sec gained per second
-    maxExtra: 12, // hard ceiling: 22 + 12 = 34 u/s
-    milestones: [15, 18, 22, 25, 28, 31, 34], // "SPEED UP!" callouts
+    growth: 0.14, // extra units/sec gained per second
+    maxExtra: 8, // hard ceiling: 28 + 8 = 36 u/s (reached ~55s after the curve)
+    milestones: [17, 22, 26, 28, 31, 34, 36], // "SPEED UP!" callouts
   },
   startDriftSpeed: 3.2, // slow tunnel drift behind the start screen
 

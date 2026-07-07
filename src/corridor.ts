@@ -451,8 +451,8 @@ export class Corridor {
   /** Blend scene atmosphere between zone palettes (doc §16, §19).
    *  Runs every frame — uses pre-parsed colors, zero allocations. */
   applyZoneBlend(distance: number) {
-    const { a, b, t, index } = zoneBlendAt(distance);
-    const ca = ZONE_COLORS[Math.max(0, index - 1)];
+    const { a, b, t, index, prevIndex } = zoneBlendAt(distance);
+    const ca = ZONE_COLORS[prevIndex];
     const cb = ZONE_COLORS[index];
 
     Color3.LerpToRef(ca.fog, cb.fog, t, this.scene.fogColor);

@@ -425,18 +425,21 @@ export class Game {
    *  then keeps climbing forever past the last step (soft-capped). */
   private speedAt(t: number): number {
     const curve = CONFIG.speedCurve;
-    let speed = curve[0][1];
+    let speed = curve[curve.length - 1][1];
+    // continuous piecewise-linear climb: ramp across each step's full span
     for (let i = 1; i < curve.length; i++) {
       const [time, value] = curve[i];
-      if (t >= time) {
-        const prev = curve[i - 1][1];
-        speed = prev + (value - prev) * Math.min(1, (t - time) / 5);
+      const [prevTime, prevValue] = curve[i - 1];
+      if (t < time) {
+        const span = Math.max(0.001, time - prevTime);
+        speed = prevValue + (value - prevValue) * Math.min(1, (t - prevTime) / span);
+        break;
       }
     }
     const lastTime = curve[curve.length - 1][0];
-    if (t > lastTime + 5) {
+    if (t > lastTime) {
       const { growth, maxExtra } = CONFIG.endlessSpeed;
-      speed += Math.min(maxExtra, (t - lastTime - 5) * growth);
+      speed += Math.min(maxExtra, (t - lastTime) * growth);
     }
     return speed;
   }
