@@ -18,7 +18,14 @@ export class AudioManager {
   private noiseBuffer: AudioBuffer | null = null;
   private ambientGain: GainNode | null = null;
   private lfo: OscillatorNode | null = null;
+  // pad voices with the harmonic ratio each holds relative to the zone root,
+  // so a zone change can retune the whole chord by ratio * newRoot
   private padOscs: OscillatorNode[] = [];
+  private padRatios: number[] = [];
+  // shared reverb send: gives the pad (and a touch of the music) a sense of
+  // space so the bed reads as background music rather than dry tones
+  private reverb: ConvolverNode | null = null;
+  private reverbGain: GainNode | null = null;
 
   // music bus: sequenced notes route through a filter so slow rift can
   // muffle the whole soundtrack at once
@@ -70,7 +77,15 @@ export class AudioManager {
     this.ctx = new Ctor();
     this.master = this.ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.5;
-    this.master.connect(this.ctx.destination);
+    // Bus compressor/limiter glues the mix and guards against clipping now that
+    // the background bed carries real level + reverb — makes it sound produced.
+    const comp = this.ctx.createDynamicsCompressor();
+    comp.threshold.value = -14;
+    comp.knee.value = 24;
+    comp.ratio.value = 3.5;
+    comp.attack.value = 0.006;
+    comp.release.value = 0.22;
+    this.master.connect(comp).connect(this.ctx.destination);
 
     // 1s of shared white noise, reused by every burst.
     const len = this.ctx.sampleRate;
@@ -108,9 +123,9 @@ export class AudioManager {
       this.appliedZone = this.msZone;
       const root = ZONE_ROOTS[this.msZone];
       const t = this.ctx.currentTime + 1.2;
-      const targets = [root, root * 2.006, root * 4.02];
+      // retune the whole chord: each voice keeps its harmonic ratio to the root
       this.padOscs.forEach((osc, i) => {
-        if (targets[i]) osc.frequency.linearRampToValueAtTime(targets[i], t);
+        osc.frequency.linearRampToValueAtTime(root * this.padRatios[i], t);
       });
     }
   }
@@ -399,53 +414,104 @@ export class AudioManager {
 
   private startAmbient() {
     if (!this.ctx || !this.master) return;
-    this.ambientGain = this.ctx.createGain();
-    this.ambientGain.gain.value = 0.05;
-    this.ambientGain.connect(this.master);
 
-    // pad retuned to the zone root by setMusicState
-    for (const [freq, type, vol] of [
-      [55, 'sine', 0.5],
-      [110.5, 'sine', 0.5],
-      [220.7, 'triangle', 0.12],
-    ] as [number, OscillatorType, number][]) {
+    // Shared reverb: a synthesized decaying-noise impulse gives the whole bed a
+    // sense of space so it sits like background music instead of dry tones.
+    this.reverb = this.ctx.createConvolver();
+    this.reverb.buffer = this.makeReverbImpulse(2.4, 2.8);
+    this.reverbGain = this.ctx.createGain();
+    this.reverbGain.gain.value = 0.5; // tasteful space, not a wash
+    this.reverb.connect(this.reverbGain).connect(this.master);
+
+    // Ambient bus at a real background level (was 0.05 — nearly inaudible),
+    // still sitting under the kick/bass so the mix stays clean.
+    this.ambientGain = this.ctx.createGain();
+    this.ambientGain.gain.value = 0.17;
+    this.ambientGain.connect(this.master);
+    // a portion of the pad feeds the reverb for width/space
+    const padVerbSend = this.ctx.createGain();
+    padVerbSend.gain.value = 0.5;
+    padVerbSend.connect(this.reverb);
+
+    // Warm chord pad: a proper voicing (sub, root, fifth, octave, colour tone),
+    // most voices detuned into pairs for width and slow movement. Ratios are
+    // relative to the zone root so setMusicState can retune the whole chord.
+    // [ratio, waveform, level, detune-cents]
+    const voices: [number, OscillatorType, number, number][] = [
+      [0.5, 'sine', 0.5, 0], // sub-octave body
+      [1, 'sine', 0.42, -5], // root
+      [1, 'triangle', 0.3, 6], // root (slightly detuned pair, warmer)
+      [1.5, 'sine', 0.26, 4], // fifth
+      [2, 'triangle', 0.2, -6], // octave
+      [2, 'sine', 0.16, 7], // octave (detuned pair)
+      [6 / 5 + 1, 'triangle', 0.12, 5], // colour tone (minor third, up an octave)
+    ];
+    // soft low-pass keeps the pad warm and un-harsh under the rhythm
+    const padTone = this.ctx.createBiquadFilter();
+    padTone.type = 'lowpass';
+    padTone.frequency.value = 2200;
+    padTone.Q.value = 0.3;
+    padTone.connect(this.ambientGain);
+    padTone.connect(padVerbSend);
+
+    for (const [ratio, type, level, detune] of voices) {
       const osc = this.ctx.createOscillator();
       osc.type = type;
-      osc.frequency.value = freq;
+      osc.frequency.value = ZONE_ROOTS[0] * ratio;
+      osc.detune.value = detune;
       const g = this.ctx.createGain();
-      g.gain.value = vol;
-      osc.connect(g).connect(this.ambientGain);
+      g.gain.value = level;
+      osc.connect(g).connect(padTone);
       osc.start();
       this.padOscs.push(osc);
+      this.padRatios.push(ratio);
     }
 
-    // Slow pulse so the drone breathes instead of droning flat.
+    // Slow pulse so the bed breathes instead of droning flat.
     this.lfo = this.ctx.createOscillator();
-    this.lfo.frequency.value = 0.35;
+    this.lfo.frequency.value = 0.22;
     const lfoGain = this.ctx.createGain();
-    lfoGain.gain.value = 0.02;
+    lfoGain.gain.value = 0.03;
     this.lfo.connect(lfoGain).connect(this.ambientGain.gain);
     this.lfo.start();
 
-    // Airy shimmer bed.
+    // Airy shimmer bed — high, quiet noise wash for air, routed through space.
     const src = this.ctx.createBufferSource();
     src.buffer = this.noiseBuffer;
     src.loop = true;
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.value = 480;
-    filter.Q.value = 0.4;
+    filter.frequency.value = 900;
+    filter.Q.value = 0.5;
     const g = this.ctx.createGain();
-    g.gain.value = 0.06;
-    src.connect(filter).connect(g).connect(this.ambientGain);
+    g.gain.value = 0.04;
+    src.connect(filter).connect(g);
+    g.connect(this.ambientGain);
+    g.connect(padVerbSend);
     src.start();
   }
 
-  /** 0..1 — raises pulse rate/level through later zones (doc §26). */
+  /** Synthesize a reverb impulse response: exponentially-decaying filtered
+   *  noise. Cheap, dependency-free, gives the bed a plausible room/space. */
+  private makeReverbImpulse(seconds: number, decay: number): AudioBuffer {
+    const rate = this.ctx!.sampleRate;
+    const len = Math.max(1, Math.floor(seconds * rate));
+    const buf = this.ctx!.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        // stereo-decorrelated noise with an exponential tail
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
+    }
+    return buf;
+  }
+
+  /** 0..1 — raises the bed's presence and breathing through later zones. */
   setIntensity(t: number) {
     if (!this.ctx || !this.ambientGain || !this.lfo) return;
     const now = this.ctx.currentTime;
-    this.ambientGain.gain.linearRampToValueAtTime(0.05 + t * 0.05, now + 1.5);
-    this.lfo.frequency.linearRampToValueAtTime(0.35 + t * 1.4, now + 1.5);
+    this.ambientGain.gain.linearRampToValueAtTime(0.17 + t * 0.06, now + 1.5);
+    this.lfo.frequency.linearRampToValueAtTime(0.22 + t * 0.9, now + 1.5);
   }
 }
