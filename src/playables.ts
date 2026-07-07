@@ -43,14 +43,19 @@ export const inPlayablesEnv = !!sdk?.IN_PLAYABLES_ENV;
 let loadDone = false;
 let pendingBest: number | null = null;
 
+// Everything below is gated on IN_PLAYABLES_ENV, not just on the global
+// existing: the real SDK script still loads on external hosting (Vercel),
+// where it self-identifies as outside the env but can still fire callbacks
+// (e.g. audioEnabled=false, which would silently hard-mute the game).
+
 /** Signal that rendering has begun (first frame drawn). MUST be called. */
 export function firstFrameReady() {
-  sdk?.game.firstFrameReady();
+  if (inPlayablesEnv) sdk!.game.firstFrameReady();
 }
 
 /** Signal the game is interactive — YouTube hides its spinner on this. */
 export function gameReady() {
-  sdk?.game.gameReady();
+  if (inPlayablesEnv) sdk!.game.gameReady();
 }
 
 /** Best score from cloud save (in-env) or localStorage (everywhere else). */
@@ -113,13 +118,13 @@ export function isAudioEnabled(): boolean {
 }
 
 export function onAudioEnabledChange(callback: (enabled: boolean) => void) {
-  sdk?.system.onAudioEnabledChange(callback);
+  if (inPlayablesEnv) sdk!.system.onAudioEnabledChange(callback);
 }
 
 export function onPause(callback: () => void) {
-  sdk?.system.onPause(callback);
+  if (inPlayablesEnv) sdk!.system.onPause(callback);
 }
 
 export function onResume(callback: () => void) {
-  sdk?.system.onResume(callback);
+  if (inPlayablesEnv) sdk!.system.onResume(callback);
 }
