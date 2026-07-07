@@ -136,9 +136,8 @@ export class Game {
       this.score.miss();
       this.ui.setCombo(0, 1);
     };
-    this.projectiles.onBounce = (pos) => {
+    this.projectiles.onBounce = () => {
       this.audio.bounce(0.8);
-      this.shatter.flash(pos, 0.3);
     };
     this.spawner.onDodge = () => {
       // air-rip when slipping past a live hazard at speed
@@ -489,7 +488,6 @@ export class Game {
       if (s && !spawn) spawn = s;
     }
     if (!spawn) return;
-    this.shatter.flash(spawn.add(ray.direction.scale(0.4)), 0.45);
     this.rig.shake(0.012); // subtle launch recoil
 
     this.ammo.spend();

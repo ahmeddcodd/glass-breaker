@@ -27,7 +27,7 @@ interface ParticleState {
   b: number;
 }
 
-interface FlashState {
+interface RingState {
   mesh: Mesh;
   life: number;
 }
@@ -47,8 +47,7 @@ export class ShatterSystem {
   private sparkStates: ParticleState[];
   private nextShard = 0;
   private nextSpark = 0;
-  private flashes: FlashState[] = [];
-  private rings: FlashState[] = [];
+  private rings: RingState[] = [];
   private anyActive = false;
 
   constructor(scene: Scene, materials: GameMaterials) {
@@ -80,16 +79,6 @@ export class ShatterSystem {
     this.sparkStates = makeStates(sparkPool);
 
     this.hideAll();
-
-    // Impact flash pool: additive discs that scale up and vanish.
-    for (let i = 0; i < 6; i++) {
-      const flash = CreatePlane(`flash${i}`, { size: 1 }, scene);
-      flash.material = materials.flash;
-      flash.billboardMode = Mesh.BILLBOARDMODE_ALL;
-      flash.isPickable = false;
-      flash.setEnabled(false);
-      this.flashes.push({ mesh: flash, life: 0 });
-    }
 
     // Shockwave rings: expanding additive tori — the "punch" of big breaks.
     for (let i = 0; i < 4; i++) {
@@ -190,28 +179,7 @@ export class ShatterSystem {
     }
   }
 
-  flash(pos: Vector3, scale = 1) {
-    const f = this.flashes.find((x) => x.life <= 0) ?? this.flashes[0];
-    f.life = 0.18;
-    f.mesh.position.copyFrom(pos);
-    f.mesh.scaling.setAll(0.4 * scale);
-    f.mesh.visibility = 1;
-    f.mesh.setEnabled(true);
-  }
-
   update(dt: number) {
-    for (const f of this.flashes) {
-      if (f.life <= 0) continue;
-      f.life -= dt;
-      if (f.life <= 0) {
-        f.mesh.setEnabled(false);
-        continue;
-      }
-      const t = 1 - f.life / 0.18;
-      f.mesh.scaling.setAll(0.4 + t * 2.2);
-      f.mesh.visibility = 1 - t;
-    }
-
     for (const r of this.rings) {
       if (r.life <= 0) continue;
       r.life -= dt;

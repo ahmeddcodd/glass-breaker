@@ -159,7 +159,6 @@ export class Obstacle {
         // Reinforced plate: first hit only cracks it (doc §15-F). The
         // material swap + crack star happen in the reinforced builder wrapper.
         shatter.burst(point.clone(), dir, color, 8, 0.5, momentum);
-        shatter.flash(point.clone(), 0.7);
         return {
           score: 0,
           ammo: 0,
@@ -176,7 +175,6 @@ export class Obstacle {
       this.hideDecorIfCleared();
       const count = Math.round((12 + piece.shatterSize * 10) * (0.8 + momentum * 0.3));
       shatter.burst(center.clone(), dir, color, count, piece.shatterSize, momentum);
-      shatter.flash(point.clone(), piece.shatterSize + 0.4);
 
       return {
         score: piece.scoreValue,
