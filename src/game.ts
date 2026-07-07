@@ -133,8 +133,14 @@ export class Game {
     this.audio = new AudioManager();
     this.ui = new UI(document.getElementById('ui')!);
 
-    this.ui.onStart = () => this.startRun();
+    // Start/restart are ignored while YouTube has the game paused — it must
+    // stay frozen and non-interactive until onResume.
+    this.ui.onStart = () => {
+      if (this.paused) return;
+      this.startRun();
+    };
     this.ui.onRestart = () => {
+      if (this.paused) return;
       this.audio.uiTap();
       this.startRun();
     };
@@ -171,6 +177,9 @@ export class Game {
     playables.onAudioEnabledChange((enabled) => this.audio.setEnabled(enabled));
     playables.onPause(() => {
       this.paused = true;
+      // Draw one last clean frame so the preserved buffer freezes on the
+      // current image (not a torn/black one) for the duration of the pause.
+      this.scene.render();
       this.audio.suspend();
       playables.saveBestScore(this.score.best);
     });
@@ -463,7 +472,7 @@ export class Game {
   // ----------------------------------------------------------------- input
 
   private handleTap(cssX: number, cssY: number) {
-    if (this.state !== 'playing') return;
+    if (this.paused || this.state !== 'playing') return;
     this.audio.unlock();
     this.ui.tapRipple(cssX, cssY);
 

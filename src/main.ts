@@ -8,6 +8,10 @@ const engine = new Engine(canvas, true, {
   stencil: false,
   doNotHandleContextLost: true,
   powerPreference: 'high-performance',
+  // Retain the last drawn frame when the render loop stops (YouTube pause
+  // freezes rendering). Without this the canvas composites as black while
+  // paused; the small per-frame copy cost is absorbed by adaptive quality.
+  preserveDrawingBuffer: true,
 });
 
 // Cap the pixel ratio: crisp on phones without paying 3x-DPR fill cost (doc §39).
