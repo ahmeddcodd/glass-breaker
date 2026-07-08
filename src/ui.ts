@@ -9,10 +9,14 @@ export interface GameOverStats {
 
 // All UI is a DOM overlay (doc §24-25): crisper text than in-scene UI and a
 // clean portrait layout with the top 8% reserved for HUD numbers.
+export type AudioSetting = 'sfx' | 'music' | 'ambient';
+
 export class UI {
   onStart: () => void = () => {};
   onRestart: () => void = () => {};
   onContinue: () => void = () => {};
+  /** Fired when a settings toggle changes: which one and its new value. */
+  onSettingChange: (key: AudioSetting, value: boolean) => void = () => {};
 
   private scoreEl: HTMLElement;
   private ammoEl: HTMLElement;
@@ -38,6 +42,10 @@ export class UI {
   private fakeAdEl: HTMLElement;
   private fakeAdTimerEl: HTMLElement;
   private fakeAdSkipEl: HTMLElement;
+  private settingsBtn: HTMLElement;
+  private settingsPanel: HTMLElement;
+  private settingsNote: HTMLElement;
+  private toggles: Record<AudioSetting, HTMLElement>;
   private promptTimer: number | null = null;
   private lastPowerLabel: string | null = null;
 
@@ -75,6 +83,19 @@ export class UI {
         <div id="fake-ad-title">AD BREAK</div>
         <div id="fake-ad-timer"></div>
         <button class="btn" id="fake-ad-skip" style="display:none">Skip Ad</button>
+      </div>
+      <button id="settings-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
+      <div id="settings-panel">
+        <div id="settings-card">
+          <div id="settings-title">Settings</div>
+          <label class="setting-row"><span>Sound Effects</span><span class="toggle" id="toggle-sfx"><span class="toggle-knob"></span></span></label>
+          <label class="setting-row"><span>Music</span><span class="toggle" id="toggle-music"><span class="toggle-knob"></span></span></label>
+          <label class="setting-row"><span>Ambient</span><span class="toggle" id="toggle-ambient"><span class="toggle-knob"></span></span></label>
+          <div id="settings-note"></div>
+          <button class="btn" id="settings-close">Done</button>
+        </div>
       </div>
       <div class="screen" id="start-screen">
         <div class="game-title">Glass<br/>Breaker</div>
@@ -125,6 +146,10 @@ export class UI {
     this.fakeAdEl = get('fake-ad');
     this.fakeAdTimerEl = get('fake-ad-timer');
     this.fakeAdSkipEl = get('fake-ad-skip');
+    this.settingsBtn = get('settings-btn');
+    this.settingsPanel = get('settings-panel');
+    this.settingsNote = get('settings-note');
+    this.toggles = { sfx: get('toggle-sfx'), music: get('toggle-music'), ambient: get('toggle-ambient') };
 
     this.startScreen.addEventListener('pointerdown', () => this.onStart());
     get('restart-btn').addEventListener('pointerdown', (ev) => {
@@ -134,6 +159,28 @@ export class UI {
     this.continueBtn.addEventListener('pointerdown', (ev) => {
       ev.stopPropagation();
       this.onContinue();
+    });
+
+    // Settings: gear opens the panel; each toggle fires onSettingChange; the
+    // panel closes on Done or a tap on the backdrop (outside the card).
+    this.settingsBtn.addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation();
+      this.openSettings();
+    });
+    get('settings-close').addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation();
+      this.closeSettings();
+    });
+    this.settingsPanel.addEventListener('pointerdown', (ev) => {
+      if (ev.target === this.settingsPanel) this.closeSettings(); // backdrop tap
+    });
+    (Object.keys(this.toggles) as AudioSetting[]).forEach((key) => {
+      this.toggles[key].addEventListener('pointerdown', (ev) => {
+        ev.stopPropagation();
+        const next = !this.toggles[key].classList.contains('on');
+        this.setToggleVisual(key, next);
+        this.onSettingChange(key, next);
+      });
     });
   }
 
@@ -179,6 +226,40 @@ export class UI {
   /** Hide the whole game-over screen (used when a revive is granted). */
   hideGameOver() {
     this.overScreen.classList.remove('visible');
+  }
+
+  // -------------------------------------------------------------- settings
+
+  /** Reflect the current settings on the toggles (called after load). */
+  setSettingsState(s: Record<AudioSetting, boolean>) {
+    (Object.keys(this.toggles) as AudioSetting[]).forEach((k) => this.setToggleVisual(k, s[k]));
+  }
+
+  private setToggleVisual(key: AudioSetting, on: boolean) {
+    this.toggles[key].classList.toggle('on', on);
+  }
+
+  /**
+   * Show/hide a note in the panel (used to tell the player that YouTube has
+   * muted everything, so their toggles look inert on purpose — no conflict).
+   */
+  setSettingsMuteNote(ytMuted: boolean) {
+    this.settingsNote.textContent = ytMuted ? 'Muted by YouTube' : '';
+    this.settingsNote.classList.toggle('visible', ytMuted);
+  }
+
+  private openSettings() {
+    this.settingsPanel.classList.add('visible');
+  }
+
+  private closeSettings() {
+    this.settingsPanel.classList.remove('visible');
+  }
+
+  /** Show/hide the gear button (hidden during active play to keep the HUD clean). */
+  setSettingsButtonVisible(visible: boolean) {
+    this.settingsBtn.classList.toggle('visible', visible);
+    if (!visible) this.closeSettings();
   }
 
   /**

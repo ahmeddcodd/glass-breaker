@@ -76,6 +76,10 @@ export class Game {
 
   private powerups = new PowerUpManager();
 
+  // player audio settings (persisted with the best score in one save blob)
+  private settings: playables.AudioSettings = { ...playables.DEFAULT_SETTINGS };
+  private ytAudioEnabled = true;
+
   // rewarded-ad revive: unlimited per run. `awaitingAd` guards against a
   // double-tap while the ad is loading; `countdownTimer` drives the 3·2·1.
   private awaitingAd = false;
@@ -186,9 +190,34 @@ export class Game {
     // Off-platform (Vercel/local), the Continue revive plays a placeholder
     // ad break instead of a real YouTube ad.
     playables.setSimulatedAdPresenter(() => this.ui.showFakeAd());
-    void playables.loadBestScore().then((best) => this.score.setBest(best));
-    this.audio.setEnabled(playables.isAudioEnabled());
-    playables.onAudioEnabledChange((enabled) => this.audio.setEnabled(enabled));
+
+    // Load best score + audio settings (one cloud blob), then apply both.
+    void playables.loadSaveData().then(({ best, settings }) => {
+      this.score.setBest(best);
+      this.settings = settings;
+      this.applyAudioSettings();
+      this.ui.setSettingsState(settings);
+    });
+
+    // YouTube mute is the master gate: it sits ABOVE the player's per-channel
+    // toggles, so when YT mutes, everything is silenced regardless of settings.
+    this.ytAudioEnabled = playables.isAudioEnabled();
+    this.audio.setEnabled(this.ytAudioEnabled);
+    this.ui.setSettingsMuteNote(!this.ytAudioEnabled);
+    playables.onAudioEnabledChange((enabled) => {
+      this.ytAudioEnabled = enabled;
+      this.audio.setEnabled(enabled);
+      this.ui.setSettingsMuteNote(!enabled);
+    });
+
+    // Player toggles: update the matching audio bus and persist. These never
+    // touch the master gate, so they can't override or conflict with YT mute.
+    this.ui.onSettingChange = (key, value) => {
+      this.settings[key] = value;
+      this.applyAudioSettings();
+      this.audio.uiTap();
+      playables.saveSettings(this.settings);
+    };
     playables.onPause(() => {
       this.paused = true;
       // Draw one last clean frame so the preserved buffer freezes on the
@@ -219,6 +248,7 @@ export class Game {
     }
 
     this.ui.showStart();
+    this.ui.setSettingsButtonVisible(true); // gear available on the start screen
     this.corridor.setRunStart(-this.debugDist);
     this.corridor.applyZoneBlend(this.debugDist);
     this.updateZone(this.debugDist);
@@ -772,6 +802,7 @@ export class Game {
     this.displayScore = 0;
 
     this.ui.showPlaying();
+    this.ui.setSettingsButtonVisible(false); // hide the gear during active play
     this.ui.showCountdown('');
     this.awaitingAd = false;
     this.ui.setLowAmmo(false);
@@ -815,6 +846,7 @@ export class Game {
       },
       playables.adsAvailable // Continue only shown in the Playables env
     );
+    this.ui.setSettingsButtonVisible(true); // gear available on the game-over screen
   }
 
   /**
@@ -856,6 +888,7 @@ export class Game {
 
     this.ui.hideGameOver();
     this.ui.showPlaying();
+    this.ui.setSettingsButtonVisible(false); // hide the gear back into active play
     this.ui.setLowAmmo(false);
     this.ui.setCombo(0, 1);
     this.ui.prompt('');
@@ -931,5 +964,12 @@ export class Game {
 
   private vibrate(ms: number) {
     if (navigator.vibrate) navigator.vibrate(ms);
+  }
+
+  /** Push the current player settings into the audio buses (below YT mute). */
+  private applyAudioSettings() {
+    this.audio.setSfxOn(this.settings.sfx);
+    this.audio.setMusicOn(this.settings.music);
+    this.audio.setAmbientOn(this.settings.ambient);
   }
 }

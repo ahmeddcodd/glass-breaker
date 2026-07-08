@@ -32,6 +32,17 @@ export class AudioManager {
   private musicGain: GainNode | null = null;
   private musicFilter: BiquadFilterNode | null = null;
 
+  // Player audio settings — three independent on/off gates that sit UNDER the
+  // master (YouTube-mute) node, so YT mute always wins and the toggles never
+  // conflict with it or each other. SFX route through sfxBus; the beat
+  // sequencer through musicBus; the ambient drone/reverb through ambientBus.
+  private sfxBus: GainNode | null = null;
+  private musicBus: GainNode | null = null;
+  private ambientBus: GainNode | null = null;
+  private sfxOn = true;
+  private musicOn = true;
+  private ambientOn = true;
+
   // sequencer state
   private step = 0;
   private nextStepTime = 0;
@@ -48,10 +59,31 @@ export class AudioManager {
   private muted = false;
   private paused = false;
 
-  /** Hard mute (Playables cert): zero the master bus, survive unlock order. */
+  /** Hard mute (Playables cert): zero the master bus, survive unlock order.
+   *  This is the YouTube mute gate — it sits ABOVE the player's SFX/music/
+   *  ambient toggles, so when YouTube mutes, nothing reaches output no matter
+   *  what the in-game settings are. */
   setEnabled(enabled: boolean) {
     this.muted = !enabled;
     if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
+  }
+
+  /** Player setting: sound effects on/off (independent of YouTube mute). */
+  setSfxOn(on: boolean) {
+    this.sfxOn = on;
+    if (this.sfxBus) this.sfxBus.gain.value = on ? 1 : 0;
+  }
+
+  /** Player setting: beat/music soundtrack on/off. */
+  setMusicOn(on: boolean) {
+    this.musicOn = on;
+    if (this.musicBus) this.musicBus.gain.value = on ? 1 : 0;
+  }
+
+  /** Player setting: ambient drone/pad bed on/off. */
+  setAmbientOn(on: boolean) {
+    this.ambientOn = on;
+    if (this.ambientBus) this.ambientBus.gain.value = on ? 1 : 0;
   }
 
   /** Freeze the whole audio graph while the game is paused by YouTube. */
@@ -87,6 +119,18 @@ export class AudioManager {
     comp.release.value = 0.22;
     this.master.connect(comp).connect(this.ctx.destination);
 
+    // Player-setting sub-buses, all under master (the YouTube-mute gate).
+    // Their gains are 1/0 per the player's toggles; master still overrides.
+    this.sfxBus = this.ctx.createGain();
+    this.sfxBus.gain.value = this.sfxOn ? 1 : 0;
+    this.sfxBus.connect(this.master);
+    this.musicBus = this.ctx.createGain();
+    this.musicBus.gain.value = this.musicOn ? 1 : 0;
+    this.musicBus.connect(this.master);
+    this.ambientBus = this.ctx.createGain();
+    this.ambientBus.gain.value = this.ambientOn ? 1 : 0;
+    this.ambientBus.connect(this.master);
+
     // 1s of shared white noise, reused by every burst.
     const len = this.ctx.sampleRate;
     this.noiseBuffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -98,7 +142,7 @@ export class AudioManager {
     this.musicFilter.frequency.value = 12000;
     this.musicGain = this.ctx.createGain();
     this.musicGain.gain.value = 0.55;
-    this.musicGain.connect(this.musicFilter).connect(this.master);
+    this.musicGain.connect(this.musicFilter).connect(this.musicBus);
 
     this.startAmbient();
     this.nextStepTime = this.ctx.currentTime + 0.15;
@@ -286,7 +330,7 @@ export class AudioManager {
     if (freqEnd > 0) osc.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
     g.gain.setValueAtTime(gain, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(g).connect(this.master);
+    osc.connect(g).connect(this.sfxBus ?? this.master);
     osc.start(t);
     osc.stop(t + dur + 0.02);
   }
@@ -304,7 +348,7 @@ export class AudioManager {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(gain, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(filter).connect(g).connect(this.master);
+    src.connect(filter).connect(g).connect(this.sfxBus ?? this.master);
     src.start(t);
     src.stop(t + dur + 0.02);
   }
@@ -421,13 +465,13 @@ export class AudioManager {
     this.reverb.buffer = this.makeReverbImpulse(2.4, 2.8);
     this.reverbGain = this.ctx.createGain();
     this.reverbGain.gain.value = 0.5; // tasteful space, not a wash
-    this.reverb.connect(this.reverbGain).connect(this.master);
+    this.reverb.connect(this.reverbGain).connect(this.ambientBus ?? this.master);
 
     // Ambient bus at a real background level (was 0.05 — nearly inaudible),
     // still sitting under the kick/bass so the mix stays clean.
     this.ambientGain = this.ctx.createGain();
     this.ambientGain.gain.value = 0.17;
-    this.ambientGain.connect(this.master);
+    this.ambientGain.connect(this.ambientBus ?? this.master);
     // a portion of the pad feeds the reverb for width/space
     const padVerbSend = this.ctx.createGain();
     padVerbSend.gain.value = 0.5;

@@ -39,6 +39,10 @@ The game integrates the [YouTube Playables SDK](https://developers.google.com/yo
   (no ad system) a short placeholder "ad break" plays instead, then grants the revive.
 - YouTube's mute toggle hard-mutes the WebAudio master bus; `onPause`/`onResume` freeze the
   entire game (updates, rendering and audio).
+- **In-game settings** (gear button, bottom-left): independent SFX / Music / Ambient toggles,
+  saved in the same cloud blob as the best score. They sit *below* the master bus, so YouTube's
+  mute always overrides them and the two never conflict — the panel shows "Muted by YouTube"
+  when YT has muted.
 
 Outside the Playables environment the SDK is absent and every call is a safe no-op, so local
 dev and Vercel previews behave exactly as before.

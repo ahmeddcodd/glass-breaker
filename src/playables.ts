@@ -59,9 +59,51 @@ export function setSimulatedAdPresenter(fn: () => Promise<void>) {
   simulatedAdPresenter = fn;
 }
 
-/** Certification: loadData must resolve before the first saveData call. */
+/** Player audio settings persisted alongside the best score. */
+export interface AudioSettings {
+  sfx: boolean;
+  music: boolean;
+  ambient: boolean;
+}
+export const DEFAULT_SETTINGS: AudioSettings = { sfx: true, music: true, ambient: true };
+const SETTINGS_KEY = 'glass-breaker-settings';
+
+// Best score and settings share ONE save blob ({best, settings}); we mirror
+// both in memory so writing either persists the current pair without a
+// read-modify-write race.
 let loadDone = false;
-let pendingBest: number | null = null;
+let pendingSave = false;
+let currentBest = 0;
+let currentSettings: AudioSettings = { ...DEFAULT_SETTINGS };
+
+function coerceSettings(v: unknown): AudioSettings {
+  const s = (v ?? {}) as Partial<Record<keyof AudioSettings, unknown>>;
+  return {
+    sfx: typeof s.sfx === 'boolean' ? s.sfx : DEFAULT_SETTINGS.sfx,
+    music: typeof s.music === 'boolean' ? s.music : DEFAULT_SETTINGS.music,
+    ambient: typeof s.ambient === 'boolean' ? s.ambient : DEFAULT_SETTINGS.ambient,
+  };
+}
+
+/** Write the combined {best, settings} blob (cloud in-env, localStorage else). */
+function persist() {
+  if (!loadDone) {
+    pendingSave = true;
+    return;
+  }
+  if (!inPlayablesEnv) {
+    try {
+      localStorage.setItem(BEST_SCORE_KEY, String(currentBest));
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(currentSettings));
+    } catch {
+      // storage may be unavailable in some embeds — just won't persist
+    }
+    return;
+  }
+  sdk!.game
+    .saveData(JSON.stringify({ best: currentBest, settings: currentSettings }))
+    .catch(() => sdk!.health.logError());
+}
 
 // Everything below is gated on IN_PLAYABLES_ENV, not just on the global
 // existing: the real SDK script still loads on external hosting (Vercel),
@@ -78,52 +120,53 @@ export function gameReady() {
   if (inPlayablesEnv) sdk!.game.gameReady();
 }
 
-/** Best score from cloud save (in-env) or localStorage (everywhere else). */
-export async function loadBestScore(): Promise<number> {
+/** Load the saved blob (best score + audio settings). Resolves both; read
+ *  settings via loadedSettings(). */
+export async function loadSaveData(): Promise<{ best: number; settings: AudioSettings }> {
   let best = 0;
+  let settings: AudioSettings = { ...DEFAULT_SETTINGS };
   if (!inPlayablesEnv) {
     try {
       best = Number(localStorage.getItem(BEST_SCORE_KEY)) || 0;
+      const rawS = localStorage.getItem(SETTINGS_KEY);
+      if (rawS) settings = coerceSettings(JSON.parse(rawS));
     } catch {
-      best = 0;
+      // storage unavailable — defaults
     }
   } else {
     try {
       const raw = await sdk!.game.loadData();
       if (raw) {
-        const saved = (JSON.parse(raw) as { best?: unknown }).best;
-        if (typeof saved === 'number' && Number.isFinite(saved)) best = saved;
+        const parsed = JSON.parse(raw) as { best?: unknown; settings?: unknown };
+        if (typeof parsed.best === 'number' && Number.isFinite(parsed.best)) best = parsed.best;
+        settings = coerceSettings(parsed.settings);
       }
     } catch {
       // corrupt or unavailable save — start fresh rather than break the game
       sdk!.health.logWarning();
     }
   }
+  currentBest = best;
+  currentSettings = settings;
   loadDone = true;
   // flush a save that raced ahead of the load (defensive; save order per cert)
-  if (pendingBest !== null) {
-    const queued = pendingBest;
-    pendingBest = null;
-    saveBestScore(Math.max(queued, best));
+  if (pendingSave) {
+    pendingSave = false;
+    persist();
   }
-  return best;
+  return { best, settings };
 }
 
-/** Persist the best score. Queued until loadBestScore has resolved. */
+/** Update the persisted best score (writes the combined blob). */
 export function saveBestScore(best: number) {
-  if (!loadDone) {
-    pendingBest = best;
-    return;
-  }
-  if (!inPlayablesEnv) {
-    try {
-      localStorage.setItem(BEST_SCORE_KEY, String(best));
-    } catch {
-      // localStorage may be unavailable in some embeds — best just won't persist
-    }
-    return;
-  }
-  sdk!.game.saveData(JSON.stringify({ best })).catch(() => sdk!.health.logError());
+  currentBest = Math.max(currentBest, best);
+  persist();
+}
+
+/** Update the persisted audio settings (writes the combined blob). */
+export function saveSettings(settings: AudioSettings) {
+  currentSettings = { ...settings };
+  persist();
 }
 
 /** True when rewarded ads can be offered — real ads in the Playables env, a
