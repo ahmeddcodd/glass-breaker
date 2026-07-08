@@ -69,6 +69,10 @@ vercel --prod # production deploy
 
 - `/?dist=750` — start the run 750 m in (jump straight to a later zone).
 - `/?qa` — exposes `__qaPower('multishot' | 'slowrift' | 'shield')` in the console to trigger power-ups.
+- `/?testad` — **preview only.** On Vercel/local (where real YouTube ads don't exist) this
+  shows the Continue button and simulates a successful rewarded ad, so the revive + 3·2·1
+  countdown can be tried out. No effect inside real YouTube Playables (genuine ads always
+  used); never add it to the production URL.
 - Console: `__fps` and `__quality` report the adaptive-quality state while playing.
 
 ## Tech notes

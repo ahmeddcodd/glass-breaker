@@ -43,6 +43,18 @@ const sdk = typeof ytgame !== 'undefined' ? ytgame : undefined;
 
 export const inPlayablesEnv = !!sdk?.IN_PLAYABLES_ENV;
 
+/**
+ * ?testad — dev-only preview flag. Outside the Playables env (Vercel/local) it
+ * makes the rewarded-ad Continue flow *appear and function* by simulating a
+ * successful ad, so the revive + countdown can be previewed without a real
+ * YouTube ad. It has NO effect inside the real Playables env, where genuine
+ * ads are always used. Never set in the production URL.
+ */
+const simulateAds =
+  !inPlayablesEnv &&
+  typeof location !== 'undefined' &&
+  new URLSearchParams(location.search).has('testad');
+
 /** Certification: loadData must resolve before the first saveData call. */
 let loadDone = false;
 let pendingBest: number | null = null;
@@ -110,17 +122,23 @@ export function saveBestScore(best: number) {
   sdk!.game.saveData(JSON.stringify({ best })).catch(() => sdk!.health.logError());
 }
 
-/** True when rewarded ads can be offered (Playables env only). */
-export const adsAvailable = inPlayablesEnv;
+/** True when rewarded ads can be offered (Playables env, or ?testad preview). */
+export const adsAvailable = inPlayablesEnv || simulateAds;
 
 /**
  * Show a rewarded ad and resolve to whether the reward was earned. Resolves
  * false outside the Playables environment (so revive UI simply never appears
  * on Vercel/local) and on any SDK failure — the caller should not revive on
- * false.
+ * false. With ?testad set on external hosting, resolves true after a short
+ * delay to preview the revive flow without a real ad.
  */
 export async function requestRewardedAd(rewardId: string): Promise<boolean> {
-  if (!inPlayablesEnv) return false;
+  if (!inPlayablesEnv) {
+    if (!simulateAds) return false;
+    // preview: pretend a rewarded ad played to completion
+    await new Promise((r) => setTimeout(r, 900));
+    return true;
+  }
   try {
     return await sdk!.ads.requestRewardedAd(rewardId);
   } catch {
