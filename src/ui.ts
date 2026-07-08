@@ -35,6 +35,9 @@ export class UI {
   private slowTint: HTMLElement;
   private continueBtn: HTMLElement;
   private countdownEl: HTMLElement;
+  private fakeAdEl: HTMLElement;
+  private fakeAdTimerEl: HTMLElement;
+  private fakeAdSkipEl: HTMLElement;
   private promptTimer: number | null = null;
   private lastPowerLabel: string | null = null;
 
@@ -67,6 +70,12 @@ export class UI {
       <div id="effect-flash"></div>
       <div id="slow-tint"></div>
       <div id="countdown"></div>
+      <div id="fake-ad">
+        <div id="fake-ad-badge">AD</div>
+        <div id="fake-ad-title">AD BREAK</div>
+        <div id="fake-ad-timer"></div>
+        <button class="btn" id="fake-ad-skip" style="display:none">Skip Ad</button>
+      </div>
       <div class="screen" id="start-screen">
         <div class="game-title">Glass<br/>Breaker</div>
         <div class="game-subtitle">Break glass · Save spheres · Survive</div>
@@ -113,6 +122,9 @@ export class UI {
     this.slowTint = get('slow-tint');
     this.continueBtn = get('continue-btn');
     this.countdownEl = get('countdown');
+    this.fakeAdEl = get('fake-ad');
+    this.fakeAdTimerEl = get('fake-ad-timer');
+    this.fakeAdSkipEl = get('fake-ad-skip');
 
     this.startScreen.addEventListener('pointerdown', () => this.onStart());
     get('restart-btn').addEventListener('pointerdown', (ev) => {
@@ -167,6 +179,46 @@ export class UI {
   /** Hide the whole game-over screen (used when a revive is granted). */
   hideGameOver() {
     this.overScreen.classList.remove('visible');
+  }
+
+  /**
+   * Placeholder "ad break" for hosting without real YouTube ads (Vercel/local).
+   * Shows a full-screen ad screen with a countdown; resolves when it finishes
+   * or the player taps Skip (enabled after a couple seconds). Never used in the
+   * real Playables env — genuine ads run there instead.
+   */
+  showFakeAd(seconds = 4): Promise<void> {
+    return new Promise((resolve) => {
+      let remaining = seconds;
+      this.fakeAdEl.classList.add('visible');
+      this.fakeAdSkipEl.style.display = 'none';
+      this.fakeAdTimerEl.textContent = `Ad · ${remaining}s`;
+
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearInterval(timer);
+        this.fakeAdSkipEl.removeEventListener('pointerdown', onSkip);
+        this.fakeAdEl.classList.remove('visible');
+        resolve();
+      };
+      const onSkip = (ev: Event) => {
+        ev.stopPropagation();
+        finish();
+      };
+      this.fakeAdSkipEl.addEventListener('pointerdown', onSkip);
+
+      const timer = window.setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          finish();
+          return;
+        }
+        this.fakeAdTimerEl.textContent = `Ad · ${remaining}s`;
+        if (remaining <= seconds - 2) this.fakeAdSkipEl.style.display = '';
+      }, 1000);
+    });
   }
 
   /**

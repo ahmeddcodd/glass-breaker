@@ -43,17 +43,21 @@ const sdk = typeof ytgame !== 'undefined' ? ytgame : undefined;
 
 export const inPlayablesEnv = !!sdk?.IN_PLAYABLES_ENV;
 
+// Outside the real Playables env (Vercel / local) there is no YouTube ad
+// system, so the rewarded-ad Continue flow is simulated: a short placeholder
+// "ad break" plays, then the reward is granted. Inside the real Playables env
+// this is never used — genuine YouTube ads always run instead.
+const simulateAds = !inPlayablesEnv;
+
 /**
- * ?testad — dev-only preview flag. Outside the Playables env (Vercel/local) it
- * makes the rewarded-ad Continue flow *appear and function* by simulating a
- * successful ad, so the revive + countdown can be previewed without a real
- * YouTube ad. It has NO effect inside the real Playables env, where genuine
- * ads are always used. Never set in the production URL.
+ * Presenter for the simulated ad break (set by the game to a UI method). It
+ * shows the placeholder ad screen and resolves when it finishes. If left
+ * unset, the simulation just waits briefly and grants the reward.
  */
-const simulateAds =
-  !inPlayablesEnv &&
-  typeof location !== 'undefined' &&
-  new URLSearchParams(location.search).has('testad');
+let simulatedAdPresenter: (() => Promise<void>) | null = null;
+export function setSimulatedAdPresenter(fn: () => Promise<void>) {
+  simulatedAdPresenter = fn;
+}
 
 /** Certification: loadData must resolve before the first saveData call. */
 let loadDone = false;
@@ -122,21 +126,22 @@ export function saveBestScore(best: number) {
   sdk!.game.saveData(JSON.stringify({ best })).catch(() => sdk!.health.logError());
 }
 
-/** True when rewarded ads can be offered (Playables env, or ?testad preview). */
+/** True when rewarded ads can be offered — real ads in the Playables env, a
+ *  simulated ad break everywhere else. */
 export const adsAvailable = inPlayablesEnv || simulateAds;
 
 /**
- * Show a rewarded ad and resolve to whether the reward was earned. Resolves
- * false outside the Playables environment (so revive UI simply never appears
- * on Vercel/local) and on any SDK failure — the caller should not revive on
- * false. With ?testad set on external hosting, resolves true after a short
- * delay to preview the revive flow without a real ad.
+ * Show a rewarded ad and resolve to whether the reward was earned. Inside the
+ * Playables env this runs a genuine YouTube ad; on Vercel/local it plays the
+ * simulated ad-break placeholder and grants the reward. Resolves false only on
+ * a real SDK failure — the caller should not revive on false.
  */
 export async function requestRewardedAd(rewardId: string): Promise<boolean> {
   if (!inPlayablesEnv) {
     if (!simulateAds) return false;
-    // preview: pretend a rewarded ad played to completion
-    await new Promise((r) => setTimeout(r, 900));
+    // no real ad system here — run the placeholder ad break, then reward
+    if (simulatedAdPresenter) await simulatedAdPresenter();
+    else await new Promise((r) => setTimeout(r, 900));
     return true;
   }
   try {

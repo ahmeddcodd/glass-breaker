@@ -35,7 +35,8 @@ The game integrates the [YouTube Playables SDK](https://developers.google.com/yo
 - **Continue (rewarded-ad revive):** on death, a Continue button offers a rewarded ad
   (`ads.requestRewardedAd`); on reward the player revives in place — spheres refilled,
   score/distance kept, the killing hazard cleared — after a 3·2·1 resume countdown.
-  Unlimited per run. The button only appears inside the Playables environment.
+  Unlimited per run. Inside the Playables env a genuine YouTube ad plays; on Vercel/local
+  (no ad system) a short placeholder "ad break" plays instead, then grants the revive.
 - YouTube's mute toggle hard-mutes the WebAudio master bus; `onPause`/`onResume` freeze the
   entire game (updates, rendering and audio).
 
@@ -69,10 +70,6 @@ vercel --prod # production deploy
 
 - `/?dist=750` — start the run 750 m in (jump straight to a later zone).
 - `/?qa` — exposes `__qaPower('multishot' | 'slowrift' | 'shield')` in the console to trigger power-ups.
-- `/?testad` — **preview only.** On Vercel/local (where real YouTube ads don't exist) this
-  shows the Continue button and simulates a successful rewarded ad, so the revive + 3·2·1
-  countdown can be tried out. No effect inside real YouTube Playables (genuine ads always
-  used); never add it to the production URL.
 - Console: `__fps` and `__quality` report the adaptive-quality state while playing.
 
 ## Tech notes

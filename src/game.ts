@@ -183,6 +183,9 @@ export class Game {
 
     // YouTube Playables wiring (no-ops outside the Playables environment):
     // cloud-saved best score, the platform mute toggle, and pause/resume.
+    // Off-platform (Vercel/local), the Continue revive plays a placeholder
+    // ad break instead of a real YouTube ad.
+    playables.setSimulatedAdPresenter(() => this.ui.showFakeAd());
     void playables.loadBestScore().then((best) => this.score.setBest(best));
     this.audio.setEnabled(playables.isAudioEnabled());
     playables.onAudioEnabledChange((enabled) => this.audio.setEnabled(enabled));
