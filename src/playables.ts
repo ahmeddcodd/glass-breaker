@@ -1,58 +1,93 @@
-// YouTube Playables SDK wrapper — the only module allowed to touch the
-// `ytgame` global. Outside the Playables environment (local dev, Vercel
-// preview) every call degrades gracefully: lifecycle signals become no-ops
-// and the best score falls back to localStorage.
-// SDK reference: https://developers.google.com/youtube/gaming/playables/reference/sdk
+// Playgama Bridge SDK wrapper — the only module allowed to touch the `bridge`
+// global. Bridge is a unified cross-platform HTML5 publishing SDK (Poki,
+// CrazyGames, Yandex, Playgama, YouTube, …). Outside a real host (local dev,
+// Vercel preview, headless tests) Bridge falls back to a built-in "mock"
+// platform whose calls return safe defaults (false / rejected promises) and
+// never throw — so every call here degrades gracefully with no stubbing.
+// SDK reference: https://wiki.playgama.com/playgama/bridge-sdk
+//
+// NOTE: the file keeps its historical name (`playables.ts`) and its exported
+// API surface (incl. `inPlayablesEnv`) so the rest of the game is unchanged;
+// only the internals now speak Bridge instead of the old YouTube `ytgame` SDK.
 
 import { BEST_SCORE_KEY } from './config';
 
-interface YtGame {
-  IN_PLAYABLES_ENV: boolean;
-  SDK_VERSION: string;
-  game: {
-    firstFrameReady(): void;
-    gameReady(): void;
-    loadData(): Promise<string>;
-    saveData(data: string): Promise<void>;
+// Minimal typing of the Bridge surface we use (plain-JS build, Promise-based).
+type RewardedState = 'loading' | 'opened' | 'closed' | 'rewarded' | 'failed';
+
+interface BridgeSdk {
+  initialize(): Promise<void>;
+  platform: {
+    id: string;
+    isAudioEnabled: boolean;
+    sendMessage(message: string): void;
+    on(event: string, callback: (state: unknown) => void): void;
   };
-  engagement: {
-    sendScore(score: { value: number }): Promise<void>;
+  storage: {
+    defaultType: string;
+    // Resolves a JSON string on most hosts, but the local mock resolves an
+    // already-parsed value — hence `unknown`; loadSaveData handles both.
+    get(key: string): Promise<unknown>;
+    set(key: string, value: string): Promise<void>;
   };
-  ads: {
-    requestRewardedAd(rewardId: string): Promise<boolean>;
-    requestInterstitialAd(): Promise<void>;
+  advertisement: {
+    showRewarded(placement?: string): void;
+    on(event: string, callback: (state: RewardedState) => void): void;
   };
-  system: {
-    isAudioEnabled(): boolean;
-    onAudioEnabledChange(callback: (enabled: boolean) => void): () => void;
-    onPause(callback: () => void): () => void;
-    onResume(callback: () => void): () => void;
+  leaderboards: {
+    type: string; // 'not_available' | 'in_game' | 'native' | 'native_popup'
+    setScore(leaderboardId: string, score: number): Promise<void>;
   };
-  health: {
-    logError(): void;
-    logWarning(): void;
+  EVENT_NAME: {
+    PAUSE_STATE_CHANGED: string;
+    AUDIO_STATE_CHANGED: string;
+    REWARDED_STATE_CHANGED: string;
+    [k: string]: string;
   };
 }
 
 declare global {
   // eslint-disable-next-line no-var
-  var ytgame: YtGame | undefined;
+  var bridge: BridgeSdk | undefined;
 }
 
-const sdk = typeof ytgame !== 'undefined' ? ytgame : undefined;
+const sdk = typeof bridge !== 'undefined' ? bridge : undefined;
 
-export const inPlayablesEnv = !!sdk?.IN_PLAYABLES_ENV;
+// Leaderboard id — must match `playgama-bridge-config.json`.
+const LEADERBOARD_ID = 'glass-breaker';
+// Rewarded ad safety net: if no terminal state arrives, resolve `false`.
+const REWARDED_TIMEOUT_MS = 30000;
 
-// Outside the real Playables env (Vercel / local) there is no YouTube ad
-// system, so the rewarded-ad Continue flow is simulated: a short placeholder
-// "ad break" plays, then the reward is granted. Inside the real Playables env
-// this is never used — genuine YouTube ads always run instead.
-const simulateAds = !inPlayablesEnv;
+// `ready` gates every SDK call: Bridge throws if used before initialize()
+// (reading even bridge.platform.id early logs "you must initialize it first").
+let ready = false;
 
 /**
- * Presenter for the simulated ad break (set by the game to a UI method). It
- * shows the placeholder ad screen and resolves when it finishes. If left
- * unset, the simulation just waits briefly and grants the reward.
+ * On a real Playgama host (not the local/mock fallback). Kept under the
+ * historical name `inPlayablesEnv` so game.ts is unchanged: it still means
+ * "a genuine host with real ads / cloud storage" vs. dev/preview.
+ *
+ * A mutable live binding, not a load-time const: `platform.id` may only be read
+ * after `initializeBridge()`, so it is resolved there. `game.ts` reads this via
+ * the namespace import (`playables.inPlayablesEnv`) at game-over — well after
+ * init — so it always sees the resolved value.
+ */
+export let inPlayablesEnv = false;
+
+// Off a real host there is no ad system, so the rewarded-ad Continue flow is
+// simulated: a short placeholder "ad break" plays, then the reward is granted.
+// Resolved alongside inPlayablesEnv in initializeBridge().
+let simulateAds = true;
+
+// True when rewarded ads can be offered — real ads on a host, a simulated ad
+// break everywhere else. Resolved in initializeBridge() (default true so the
+// Continue button is available even before init / under the mock fallback).
+export let adsAvailable = true;
+
+/**
+ * Presenter for the simulated ad break (set by the game to a UI method). Shows
+ * the placeholder ad screen and resolves when it finishes. If unset, the
+ * simulation just waits briefly and grants the reward.
  */
 let simulatedAdPresenter: (() => Promise<void>) | null = null;
 export function setSimulatedAdPresenter(fn: () => Promise<void>) {
@@ -66,10 +101,9 @@ export interface AudioSettings {
   ambient: boolean;
 }
 export const DEFAULT_SETTINGS: AudioSettings = { sfx: true, music: true, ambient: true };
-const SETTINGS_KEY = 'glass-breaker-settings';
 
-// Best score and settings share ONE save blob ({best, settings}); we mirror
-// both in memory so writing either persists the current pair without a
+// Best score and settings share ONE Bridge storage key ({best, settings}); we
+// mirror both in memory so writing either persists the current pair without a
 // read-modify-write race.
 let loadDone = false;
 let pendingSave = false;
@@ -85,71 +119,85 @@ function coerceSettings(v: unknown): AudioSettings {
   };
 }
 
-/** Write the combined {best, settings} blob (cloud in-env, localStorage else). */
+/**
+ * Initialize the Bridge SDK. MUST resolve before any other Bridge call.
+ * Guarded so a bare page without the SDK script (or a rejected init) still
+ * resolves — the game then runs against safe no-ops.
+ */
+export async function initializeBridge(): Promise<void> {
+  if (!sdk) return; // no script present (e.g. isolated unit test) — no-op
+  try {
+    await sdk.initialize();
+    ready = true;
+    // Safe to read platform.id only now that init has completed.
+    inPlayablesEnv = !!sdk.platform?.id && sdk.platform.id !== 'mock';
+    simulateAds = !inPlayablesEnv;
+    adsAvailable = inPlayablesEnv || simulateAds; // effectively always true
+  } catch {
+    // init failed — leave `ready` false; every wrapper below is a safe no-op.
+    // inPlayablesEnv stays false, so the simulated ad path applies.
+  }
+}
+
+/** Write the combined {best, settings} blob to Bridge storage (default type).
+ *  Off a real host / under mock this either writes local_storage or resolves
+ *  as a no-op; either way it never throws. */
 function persist() {
   if (!loadDone) {
     pendingSave = true;
     return;
   }
-  if (!inPlayablesEnv) {
-    try {
-      localStorage.setItem(BEST_SCORE_KEY, String(currentBest));
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(currentSettings));
-    } catch {
-      // storage may be unavailable in some embeds — just won't persist
-    }
-    return;
+  if (!ready || !sdk) return;
+  try {
+    void sdk.storage
+      .set(BEST_SCORE_KEY, JSON.stringify({ best: currentBest, settings: currentSettings }))
+      .catch(() => {});
+  } catch {
+    // storage unavailable — just won't persist
   }
-  sdk!.game
-    .saveData(JSON.stringify({ best: currentBest, settings: currentSettings }))
-    .catch(() => sdk!.health.logError());
 }
 
-// Everything below is gated on IN_PLAYABLES_ENV, not just on the global
-// existing: the real SDK script still loads on external hosting (Vercel),
-// where it self-identifies as outside the env but can still fire callbacks
-// (e.g. audioEnabled=false, which would silently hard-mute the game).
-
-/** Signal that rendering has begun (first frame drawn). MUST be called. */
+/** Signal that rendering has begun. Playgama has no separate first-frame
+ *  signal (it's folded into game_ready), so this is a no-op — kept for API
+ *  parity with the caller's one-shot firstFrame guard. */
 export function firstFrameReady() {
-  if (inPlayablesEnv) sdk!.game.firstFrameReady();
+  /* no-op under Bridge */
 }
 
-/** Signal the game is interactive — YouTube hides its spinner on this. */
+/** Signal the game is interactive — the host hides its loading screen on this. */
 export function gameReady() {
-  if (inPlayablesEnv) sdk!.game.gameReady();
+  if (!ready || !sdk) return;
+  try {
+    sdk.platform.sendMessage('game_ready');
+  } catch {
+    /* safe no-op */
+  }
 }
 
-/** Load the saved blob (best score + audio settings). Resolves both; read
- *  settings via loadedSettings(). */
+/** Load the saved blob (best score + audio settings). Resolves both. */
 export async function loadSaveData(): Promise<{ best: number; settings: AudioSettings }> {
   let best = 0;
   let settings: AudioSettings = { ...DEFAULT_SETTINGS };
-  if (!inPlayablesEnv) {
+  if (ready && sdk) {
     try {
-      best = Number(localStorage.getItem(BEST_SCORE_KEY)) || 0;
-      const rawS = localStorage.getItem(SETTINGS_KEY);
-      if (rawS) settings = coerceSettings(JSON.parse(rawS));
-    } catch {
-      // storage unavailable — defaults
-    }
-  } else {
-    try {
-      const raw = await sdk!.game.loadData();
-      if (raw) {
-        const parsed = JSON.parse(raw) as { best?: unknown; settings?: unknown };
+      const raw = await sdk.storage.get(BEST_SCORE_KEY);
+      // Bridge storage may hand back a JSON string (per the docs / most hosts)
+      // OR an already-parsed object (the local mock does this). Accept both.
+      let parsed: { best?: unknown; settings?: unknown } | null = null;
+      if (typeof raw === 'string' && raw) parsed = JSON.parse(raw);
+      else if (raw && typeof raw === 'object') parsed = raw as { best?: unknown; settings?: unknown };
+      if (parsed) {
         if (typeof parsed.best === 'number' && Number.isFinite(parsed.best)) best = parsed.best;
         settings = coerceSettings(parsed.settings);
       }
     } catch {
-      // corrupt or unavailable save — start fresh rather than break the game
-      sdk!.health.logWarning();
+      // missing / corrupt / unavailable save — start fresh rather than break
     }
   }
   currentBest = best;
   currentSettings = settings;
   loadDone = true;
-  // flush a save that raced ahead of the load (defensive; save order per cert)
+  // flush a save that raced ahead of the load
   if (pendingSave) {
     pendingSave = false;
     persist();
@@ -169,51 +217,99 @@ export function saveSettings(settings: AudioSettings) {
   persist();
 }
 
-/** True when rewarded ads can be offered — real ads in the Playables env, a
- *  simulated ad break everywhere else. */
-export const adsAvailable = inPlayablesEnv || simulateAds;
-
 /**
- * Show a rewarded ad and resolve to whether the reward was earned. Inside the
- * Playables env this runs a genuine YouTube ad; on Vercel/local it plays the
- * simulated ad-break placeholder and grants the reward. Resolves false only on
- * a real SDK failure — the caller should not revive on false.
+ * Show a rewarded ad and resolve to whether the reward was earned. On a real
+ * host this runs a genuine ad and resolves via the REWARDED_STATE_CHANGED
+ * event (true only on 'rewarded'); off-host it plays the simulated ad-break
+ * placeholder and grants the reward. Resolves false on failure/decline — the
+ * caller must not revive on false.
  */
-export async function requestRewardedAd(rewardId: string): Promise<boolean> {
-  if (!inPlayablesEnv) {
+export async function requestRewardedAd(_rewardId: string): Promise<boolean> {
+  void _rewardId; // Bridge uses a config placement, not a per-call reward id
+  if (!inPlayablesEnv || !ready || !sdk) {
     if (!simulateAds) return false;
     // no real ad system here — run the placeholder ad break, then reward
     if (simulatedAdPresenter) await simulatedAdPresenter();
     else await new Promise((r) => setTimeout(r, 900));
     return true;
   }
+
+  // Wrap Bridge's event-based rewarded flow in the Promise the caller expects.
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (rewarded: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(rewarded);
+    };
+    // Safety net: some placements never fire a terminal state (no fill, etc.).
+    const timer = setTimeout(() => finish(false), REWARDED_TIMEOUT_MS);
+
+    try {
+      sdk.advertisement.on(sdk.EVENT_NAME.REWARDED_STATE_CHANGED, (state: RewardedState) => {
+        // Grant ONLY on 'rewarded'. 'closed' without a reward = declined/skipped.
+        if (state === 'rewarded') finish(true);
+        else if (state === 'closed' || state === 'failed') finish(false);
+      });
+      sdk.advertisement.showRewarded();
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+/** Report the finished run's score to the platform leaderboard (if supported). */
+export function sendScore(value: number) {
+  if (!ready || !sdk) return;
   try {
-    return await sdk!.ads.requestRewardedAd(rewardId);
+    if (sdk.leaderboards.type === 'not_available') return;
+    void sdk.leaderboards.setScore(LEADERBOARD_ID, Math.max(0, Math.floor(value))).catch(() => {});
   } catch {
-    sdk!.health.logError();
-    return false;
+    /* leaderboards unsupported — safe no-op */
   }
 }
 
-/** Report the finished run's score to YouTube leaderboards/history. */
-export function sendScore(value: number) {
-  if (!inPlayablesEnv) return;
-  sdk!.engagement.sendScore({ value: Math.max(0, Math.floor(value)) }).catch(() => sdk!.health.logError());
-}
-
-/** YouTube's audio toggle. Defaults to enabled outside the env. */
+/** The platform's audio toggle. Defaults to enabled off-host / before init. */
 export function isAudioEnabled(): boolean {
-  return inPlayablesEnv ? sdk!.system.isAudioEnabled() : true;
+  return sdk?.platform?.isAudioEnabled ?? true;
 }
 
 export function onAudioEnabledChange(callback: (enabled: boolean) => void) {
-  if (inPlayablesEnv) sdk!.system.onAudioEnabledChange(callback);
+  if (!ready || !sdk) return;
+  try {
+    sdk.platform.on(sdk.EVENT_NAME.AUDIO_STATE_CHANGED, (enabled) => callback(!!enabled));
+  } catch {
+    /* safe no-op */
+  }
+}
+
+// Playgama exposes a single PAUSE_STATE_CHANGED event carrying a boolean.
+// The game wires pause/resume as two callbacks, so we subscribe once and fan
+// the boolean out to whichever handler(s) have been registered.
+let pauseCb: (() => void) | null = null;
+let resumeCb: (() => void) | null = null;
+let pauseSubscribed = false;
+
+function ensurePauseSubscription() {
+  if (pauseSubscribed || !ready || !sdk) return;
+  pauseSubscribed = true;
+  try {
+    sdk.platform.on(sdk.EVENT_NAME.PAUSE_STATE_CHANGED, (isPaused) => {
+      if (isPaused) pauseCb?.();
+      else resumeCb?.();
+    });
+  } catch {
+    /* safe no-op */
+  }
 }
 
 export function onPause(callback: () => void) {
-  if (inPlayablesEnv) sdk!.system.onPause(callback);
+  pauseCb = callback;
+  ensurePauseSubscription();
 }
 
 export function onResume(callback: () => void) {
-  if (inPlayablesEnv) sdk!.system.onResume(callback);
+  resumeCb = callback;
+  ensurePauseSubscription();
 }

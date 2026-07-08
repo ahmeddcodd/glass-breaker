@@ -26,8 +26,9 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A0%3C/text%3E%3C/svg%3E"
     />
     <title>Glass Breaker</title>
-    <!-- YouTube Playables SDK — must load before any game code; no-op elsewhere -->
-    <script src="https://www.youtube.com/game_api/v1"></script>
+    <!-- Playgama Bridge SDK — must load before any game code. On a real host it
+         loads that platform's native scripts; elsewhere it falls back to a mock. -->
+    <script src="https://bridge.playgama.com/v1/stable/playgama-bridge.js"></script>
   </head>
   <body>
     <div id="stage">

@@ -244,7 +244,7 @@ export class UI {
    * muted everything, so their toggles look inert on purpose — no conflict).
    */
   setSettingsMuteNote(ytMuted: boolean) {
-    this.settingsNote.textContent = ytMuted ? 'Muted by YouTube' : '';
+    this.settingsNote.textContent = ytMuted ? 'Muted by platform' : '';
     this.settingsNote.classList.toggle('visible', ytMuted);
   }
 
@@ -263,10 +263,10 @@ export class UI {
   }
 
   /**
-   * Placeholder "ad break" for hosting without real YouTube ads (Vercel/local).
+   * Placeholder "ad break" for hosting without a real ad system (Vercel/local/mock).
    * Shows a full-screen ad screen with a countdown; resolves when it finishes
-   * or the player taps Skip (enabled after a couple seconds). Never used in the
-   * real Playables env — genuine ads run there instead.
+   * or the player taps Skip (enabled after a couple seconds). Never used on a
+   * real host — genuine ads run there instead.
    */
   showFakeAd(seconds = 4): Promise<void> {
     return new Promise((resolve) => {

@@ -1,0 +1,18 @@
+{
+  "advertisement": {
+    "useBuiltInErrorPopup": true,
+    "minimumDelayBetweenInterstitial": 60000,
+    "interstitial": {
+      "disable": true
+    },
+    "rewarded": {
+      "preloadOnStart": true
+    }
+  },
+  "leaderboards": [
+    {
+      "id": "glass-breaker",
+      "isMain": true
+    }
+  ]
+}

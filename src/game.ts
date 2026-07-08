@@ -58,7 +58,7 @@ export class Game {
   private qualityCooldown = 4; // warmup before the first measurement counts
 
   private state: GameState = 'start';
-  /** Set by YouTube Playables onPause — halts all updates AND rendering. */
+  /** Set by the platform's pause event — halts all updates AND rendering. */
   private paused = false;
   private firstFrameSignalled = false;
   private runTime = 0;
@@ -185,10 +185,10 @@ export class Game {
     const input = new InputManager(canvas);
     input.onTap = (cssX, cssY) => this.handleTap(cssX, cssY);
 
-    // YouTube Playables wiring (no-ops outside the Playables environment):
+    // Playgama Bridge wiring (safe no-ops off a real host / under the mock):
     // cloud-saved best score, the platform mute toggle, and pause/resume.
-    // Off-platform (Vercel/local), the Continue revive plays a placeholder
-    // ad break instead of a real YouTube ad.
+    // Off-host (Vercel/local), the Continue revive plays a placeholder
+    // ad break instead of a real platform ad.
     playables.setSimulatedAdPresenter(() => this.ui.showFakeAd());
 
     // Load best score + audio settings (one cloud blob), then apply both.
@@ -335,7 +335,7 @@ export class Game {
   // ------------------------------------------------------------- main loop
 
   tick() {
-    // Playables pause: freeze everything, including rendering, until onResume.
+    // Platform pause: freeze everything, including rendering, until onResume.
     if (this.paused) return;
 
     const rawDt = Math.min(this.engine.getDeltaTime() / 1000, 0.05);
@@ -844,7 +844,7 @@ export class Game {
         accuracy: this.score.accuracy,
         smashed: this.score.objectsSmashed,
       },
-      playables.adsAvailable // Continue only shown in the Playables env
+      playables.adsAvailable // Continue shown whenever a (real or simulated) ad is available
     );
     this.ui.setSettingsButtonVisible(true); // gear available on the game-over screen
   }

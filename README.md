@@ -22,34 +22,44 @@ npm run build    # type-checks + bundles to dist/
 npm run preview  # serve the production build locally
 ```
 
-## YouTube Playables
+## Playgama Bridge (cross-platform publishing)
 
-The game integrates the [YouTube Playables SDK](https://developers.google.com/youtube/gaming/playables)
-(`src/playables.ts` wraps every `ytgame` call):
+The game integrates the [Playgama Bridge SDK](https://wiki.playgama.com/playgama/bridge-sdk) —
+one integration that publishes to many HTML5 portals (Playgama, Poki, CrazyGames, Yandex,
+YouTube, …). `src/playables.ts` wraps every `bridge` call:
 
-- `firstFrameReady()` fires after the first rendered frame, `gameReady()` once shaders are
-  prewarmed and the start screen is interactive.
-- Best score persists via `saveData`/`loadData` cloud saves in the Playables environment,
-  falling back to `localStorage` everywhere else.
-- Run scores are reported with `sendScore` at game over.
+- The Bridge script loads in `index.html` before the game bundle; `main.ts` `await`s
+  `bridge.initialize()` before constructing the game (all SDK calls require init first).
+- `gameReady()` sends `platform.sendMessage('game_ready')` once shaders are prewarmed and the
+  start screen is interactive, so the host hides its loading screen. (Bridge has no separate
+  first-frame signal, so `firstFrameReady()` is a no-op kept for API parity.)
+- Best score **and** the audio settings persist as one `{best, settings}` blob via
+  `bridge.storage` (platform cloud where available, `local_storage` otherwise).
+- Run scores are reported with `bridge.leaderboards.setScore('glass-breaker', …)` at game over
+  (a safe no-op on platforms without leaderboards).
 - **Continue (rewarded-ad revive):** on death, a Continue button offers a rewarded ad
-  (`ads.requestRewardedAd`); on reward the player revives in place — spheres refilled,
-  score/distance kept, the killing hazard cleared — after a 3·2·1 resume countdown.
-  Unlimited per run. Inside the Playables env a genuine YouTube ad plays; on Vercel/local
-  (no ad system) a short placeholder "ad break" plays instead, then grants the revive.
-- YouTube's mute toggle hard-mutes the WebAudio master bus; `onPause`/`onResume` freeze the
-  entire game (updates, rendering and audio).
+  (`bridge.advertisement.showRewarded()`); the revive is granted **only** on the `rewarded`
+  state (never on `closed`/`failed`). On reward the player revives in place — spheres refilled,
+  score/distance kept, the killing hazard cleared — after a 3·2·1 resume countdown. Unlimited
+  per run. On a real host a genuine ad plays; off-host (Vercel/local/mock) a short placeholder
+  "ad break" plays instead, then grants the revive.
+- The platform's mute toggle (`AUDIO_STATE_CHANGED`) hard-mutes the WebAudio master bus;
+  `PAUSE_STATE_CHANGED` freezes the entire game (updates, rendering and audio).
 - **In-game settings** (gear button, bottom-left): independent SFX / Music / Ambient toggles,
-  saved in the same cloud blob as the best score. They sit *below* the master bus, so YouTube's
-  mute always overrides them and the two never conflict — the panel shows "Muted by YouTube"
-  when YT has muted.
+  saved in the same storage blob as the best score. They sit *below* the master bus, so the
+  platform mute always overrides them and the two never conflict — the panel shows
+  "Muted by platform" when the host has muted.
 
-Outside the Playables environment the SDK is absent and every call is a safe no-op, so local
-dev and Vercel previews behave exactly as before.
+Outside a real host, Bridge falls back to a built-in **mock** platform whose calls return safe
+defaults (never throw), so local dev and Vercel previews behave exactly as before — no stubbing.
 
-**Ship it:** `npm run build`, then zip the *contents* of `dist/` (so `index.html` sits at the
-zip root) and upload it through the YouTube Playables partner flow. Validate first with the
-[Playables test suite](https://developers.google.com/youtube/gaming/playables/reference/test_suite_guide).
+**Config:** `public/playgama-bridge-config.json` declares the ad units and the `glass-breaker`
+leaderboard; Vite copies it to the `dist/` root. Refine it in the
+[Bridge config editor](https://playgama.github.io/bridge-config-editor/) (add per-platform
+placement/leaderboard ids) before submission.
+
+**Ship it:** `npm run build`, then zip the *contents* of `dist/` (so `index.html` and
+`playgama-bridge-config.json` sit at the zip root) and submit through the Playgama flow.
 
 ## Deploy to Vercel
 
