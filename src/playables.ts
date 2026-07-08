@@ -18,6 +18,10 @@ interface YtGame {
   engagement: {
     sendScore(score: { value: number }): Promise<void>;
   };
+  ads: {
+    requestRewardedAd(rewardId: string): Promise<boolean>;
+    requestInterstitialAd(): Promise<void>;
+  };
   system: {
     isAudioEnabled(): boolean;
     onAudioEnabledChange(callback: (enabled: boolean) => void): () => void;
@@ -104,6 +108,25 @@ export function saveBestScore(best: number) {
     return;
   }
   sdk!.game.saveData(JSON.stringify({ best })).catch(() => sdk!.health.logError());
+}
+
+/** True when rewarded ads can be offered (Playables env only). */
+export const adsAvailable = inPlayablesEnv;
+
+/**
+ * Show a rewarded ad and resolve to whether the reward was earned. Resolves
+ * false outside the Playables environment (so revive UI simply never appears
+ * on Vercel/local) and on any SDK failure — the caller should not revive on
+ * false.
+ */
+export async function requestRewardedAd(rewardId: string): Promise<boolean> {
+  if (!inPlayablesEnv) return false;
+  try {
+    return await sdk!.ads.requestRewardedAd(rewardId);
+  } catch {
+    sdk!.health.logError();
+    return false;
+  }
 }
 
 /** Report the finished run's score to YouTube leaderboards/history. */

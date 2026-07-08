@@ -45,3 +45,9 @@ the game listens for `pointerdown` on the canvas).
 - Fastest game over: just don't shoot — collisions drain the 25 starting spheres in
   ~60-120 s of waiting (poll `gameover-screen` every few seconds).
 - Non-Playables fallback: best score lives in `localStorage['glass-breaker-best']`.
+- Rewarded-ad revive: stub `ytgame.ads.requestRewardedAd` to resolve true/false. Tap the
+  Continue button by its measured `getBoundingClientRect()` center, not hardcoded coords
+  (its Y shifts with screen layout). After a true reward the run resumes via a `countdown`
+  game state (3·2·1) — assert `#countdown` text, spheres back to 25, score kept, and that
+  `#distance-value` keeps climbing to prove the run actually restarted. The button is
+  hidden when `IN_PLAYABLES_ENV` is false (Vercel/local).

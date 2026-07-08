@@ -624,3 +624,106 @@ body {
 .btn:active {
   transform: scale(0.94);
 }
+
+/* ---------- continue (rewarded-ad revive) button ---------- */
+
+.btn-continue {
+  margin-top: 4vh;
+  margin-bottom: 0.5vh;
+  padding: 1.6vh 6vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3vh;
+  line-height: 1.1;
+  color: #1c1205;
+  background: linear-gradient(180deg, #fff1c9 0%, #ffd977 46%, #ffb347 100%);
+  box-shadow: 0 0 30px rgba(255, 197, 92, 0.6), inset 0 -3px 0 rgba(170, 110, 20, 0.45),
+    inset 0 2px 0 rgba(255, 255, 255, 0.6);
+  animation: continue-pulse 1.5s ease-in-out infinite;
+}
+
+.btn-continue-icon {
+  font-size: 0.9em;
+}
+
+.btn-continue-sub {
+  font-size: clamp(9px, 1.3vh, 12px);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  opacity: 0.8;
+}
+
+.btn-continue.loading,
+.btn-continue:disabled {
+  cursor: default;
+  animation: none;
+  filter: saturate(0.5) brightness(0.85);
+}
+
+.btn-continue.is-loading {
+  color: transparent;
+}
+
+.btn-continue {
+  position: relative;
+}
+
+.btn-continue.is-loading::after {
+  content: 'LOADING AD…';
+  position: absolute;
+  left: 0;
+  right: 0;
+  color: #1c1205;
+  font-size: clamp(13px, 2vh, 20px);
+  letter-spacing: 0.2em;
+}
+
+@keyframes continue-pulse {
+  50% {
+    box-shadow: 0 0 44px rgba(255, 197, 92, 0.9), inset 0 -3px 0 rgba(170, 110, 20, 0.45),
+      inset 0 2px 0 rgba(255, 255, 255, 0.6);
+  }
+}
+
+/* ---------- 3·2·1 resume countdown ---------- */
+
+#countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 20;
+  font-size: clamp(90px, 26vh, 240px);
+  font-weight: 900;
+  line-height: 1;
+  color: var(--ui-white);
+  text-shadow: 0 0 40px rgba(127, 230, 255, 0.9), 0 0 12px rgba(127, 230, 255, 0.9);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+}
+
+#countdown.show {
+  animation: countdown-pop 1s ease-out;
+}
+
+@keyframes countdown-pop {
+  0% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}

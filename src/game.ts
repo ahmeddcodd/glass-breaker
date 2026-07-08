@@ -27,9 +27,10 @@ import { AudioManager } from './audio';
 import * as playables from './playables';
 import type { HitOutcome } from './obstacles';
 
-type GameState = 'start' | 'playing' | 'gameover';
+type GameState = 'start' | 'playing' | 'gameover' | 'countdown';
 
 const FORWARD = new Vector3(0, 0, 1);
+const REWARD_ID = 'glass-breaker-revive';
 
 export class Game {
   private engine: Engine;
@@ -74,6 +75,12 @@ export class Game {
   private lastWhoosh = 0;
 
   private powerups = new PowerUpManager();
+
+  // rewarded-ad revive: unlimited per run. `awaitingAd` guards against a
+  // double-tap while the ad is loading; `countdownTimer` drives the 3·2·1.
+  private awaitingAd = false;
+  private countdownTimer = 0;
+  private countdownShown = -1;
 
   // one-shot tutorial flags per run
   private firstShotFired = false;
@@ -143,6 +150,10 @@ export class Game {
       if (this.paused) return;
       this.audio.uiTap();
       this.startRun();
+    };
+    this.ui.onContinue = () => {
+      if (this.paused || this.awaitingAd || this.state !== 'gameover') return;
+      void this.watchAdAndRevive();
     };
     this.projectiles.onMiss = () => {
       if (this.state !== 'playing') return;
@@ -312,6 +323,11 @@ export class Game {
       if (this.state === 'start') {
         this.rig.advance(dt, CONFIG.startDriftSpeed);
         this.corridor.setRunStart(this.rig.z - this.debugDist);
+      } else if (this.state === 'countdown') {
+        // Post-revive 3·2·1: the run is held in place (camera doesn't advance)
+        // while the number ticks down, then playing resumes. Uses rawDt so a
+        // lingering hit-stop from the death frame can't stall the timer.
+        this.updateCountdown(rawDt);
       }
       this.rig.update(dt);
       this.corridor.update(dt, this.rig.z);
@@ -753,6 +769,8 @@ export class Game {
     this.displayScore = 0;
 
     this.ui.showPlaying();
+    this.ui.showCountdown('');
+    this.awaitingAd = false;
     this.ui.setLowAmmo(false);
     this.ui.setCombo(0, 1);
 
@@ -773,6 +791,7 @@ export class Game {
 
   private gameOver() {
     this.state = 'gameover';
+    this.awaitingAd = false;
     this.powerups.reset();
     this.ui.setPowerUp(null, 0);
     this.ui.setShield(false);
@@ -782,14 +801,91 @@ export class Game {
     playables.sendScore(this.score.score);
     this.audio.gameOver();
     this.vibrate(120);
-    this.ui.showGameOver({
-      score: this.score.score,
-      best: this.score.best,
-      isNewBest,
-      distance: this.score.distance,
-      accuracy: this.score.accuracy,
-      smashed: this.score.objectsSmashed,
-    });
+    this.ui.showGameOver(
+      {
+        score: this.score.score,
+        best: this.score.best,
+        isNewBest,
+        distance: this.score.distance,
+        accuracy: this.score.accuracy,
+        smashed: this.score.objectsSmashed,
+      },
+      playables.adsAvailable // Continue only shown in the Playables env
+    );
+  }
+
+  /**
+   * Continue flow: play a rewarded ad and, if the reward is earned, revive the
+   * player in place (full spheres, score/distance/speed kept) and run a 3·2·1
+   * countdown before the run resumes. A failed/declined ad leaves the game-over
+   * screen up so the player can try again or restart.
+   */
+  private async watchAdAndRevive() {
+    this.awaitingAd = true;
+    this.ui.setContinueLoading(true);
+    // Pause the game-over ambience while the ad takes over the screen.
+    this.audio.suspend();
+
+    let rewarded = false;
+    try {
+      rewarded = await playables.requestRewardedAd(REWARD_ID);
+    } finally {
+      this.awaitingAd = false;
+      this.audio.resume();
+      this.ui.setContinueLoading(false);
+    }
+
+    if (!rewarded) {
+      // ad unavailable or user backed out — stay on the game-over screen
+      return;
+    }
+    this.revive();
+  }
+
+  /** Grant a second chance: refill spheres, clear the killing hazard, then
+   *  hand off to the resume countdown. Score and distance carry over. */
+  private revive() {
+    this.ammo.reset();
+    this.powerups.reset();
+    // Sweep away whatever is bearing down on the camera so the player gets a
+    // clean restart instead of dying again on the same frame.
+    this.spawner.clearNear(this.rig.z, 30, this.shatter);
+
+    this.ui.hideGameOver();
+    this.ui.showPlaying();
+    this.ui.setLowAmmo(false);
+    this.ui.setCombo(0, 1);
+    this.ui.prompt('');
+    this.lastAmmo = -1;
+    this.refreshHud(this.rig.z - this.runStartZ);
+    this.vibrate(40);
+
+    this.beginCountdown();
+  }
+
+  private beginCountdown() {
+    this.state = 'countdown';
+    this.countdownTimer = 3;
+    this.countdownShown = -1;
+  }
+
+  /** Tick the 3·2·1 (real time — hit-stop dt would stall it). */
+  private updateCountdown(dt: number) {
+    this.countdownTimer -= dt;
+    const remaining = Math.ceil(this.countdownTimer);
+
+    if (this.countdownTimer <= 0) {
+      this.ui.showCountdown('GO!');
+      this.audio.speedUp();
+      this.state = 'playing';
+      return;
+    }
+
+    if (remaining !== this.countdownShown) {
+      this.countdownShown = remaining;
+      this.ui.showCountdown(String(remaining));
+      this.audio.uiTap();
+    }
   }
 
   // --------------------------------------------------------------- helpers

@@ -32,6 +32,10 @@ The game integrates the [YouTube Playables SDK](https://developers.google.com/yo
 - Best score persists via `saveData`/`loadData` cloud saves in the Playables environment,
   falling back to `localStorage` everywhere else.
 - Run scores are reported with `sendScore` at game over.
+- **Continue (rewarded-ad revive):** on death, a Continue button offers a rewarded ad
+  (`ads.requestRewardedAd`); on reward the player revives in place — spheres refilled,
+  score/distance kept, the killing hazard cleared — after a 3·2·1 resume countdown.
+  Unlimited per run. The button only appears inside the Playables environment.
 - YouTube's mute toggle hard-mutes the WebAudio master bus; `onPause`/`onResume` freeze the
   entire game (updates, rendering and audio).
 

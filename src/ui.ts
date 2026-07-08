@@ -12,6 +12,7 @@ export interface GameOverStats {
 export class UI {
   onStart: () => void = () => {};
   onRestart: () => void = () => {};
+  onContinue: () => void = () => {};
 
   private scoreEl: HTMLElement;
   private ammoEl: HTMLElement;
@@ -32,6 +33,8 @@ export class UI {
   private powerFill: HTMLElement;
   private shieldBadge: HTMLElement;
   private slowTint: HTMLElement;
+  private continueBtn: HTMLElement;
+  private countdownEl: HTMLElement;
   private promptTimer: number | null = null;
   private lastPowerLabel: string | null = null;
 
@@ -63,6 +66,7 @@ export class UI {
       <div id="hit-flash"></div>
       <div id="effect-flash"></div>
       <div id="slow-tint"></div>
+      <div id="countdown"></div>
       <div class="screen" id="start-screen">
         <div class="game-title">Glass<br/>Breaker</div>
         <div class="game-subtitle">Break glass · Save spheres · Survive</div>
@@ -79,6 +83,10 @@ export class UI {
           <div class="stat-row"><span>Accuracy</span><b id="stat-accuracy">0%</b></div>
           <div class="stat-row"><span>Smashed</span><b id="stat-smashed">0</b></div>
         </div>
+        <button class="btn btn-continue" id="continue-btn" style="display:none">
+          <span class="btn-continue-icon">▶</span> Continue
+          <span class="btn-continue-sub">Watch ad to revive</span>
+        </button>
         <button class="btn" id="restart-btn">Play Again</button>
       </div>
     `;
@@ -103,11 +111,17 @@ export class UI {
     this.powerFill = get('powerup-fill');
     this.shieldBadge = get('shield-badge');
     this.slowTint = get('slow-tint');
+    this.continueBtn = get('continue-btn');
+    this.countdownEl = get('countdown');
 
     this.startScreen.addEventListener('pointerdown', () => this.onStart());
     get('restart-btn').addEventListener('pointerdown', (ev) => {
       ev.stopPropagation();
       this.onRestart();
+    });
+    this.continueBtn.addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation();
+      this.onContinue();
     });
   }
 
@@ -123,7 +137,7 @@ export class UI {
     this.hudEl.classList.add('visible');
   }
 
-  showGameOver(stats: GameOverStats) {
+  showGameOver(stats: GameOverStats, canContinue = false) {
     this.hudEl.classList.remove('visible');
     this.setLowAmmo(false);
     this.prompt('');
@@ -133,7 +147,42 @@ export class UI {
     document.getElementById('stat-accuracy')!.textContent = `${stats.accuracy}%`;
     document.getElementById('stat-smashed')!.textContent = String(stats.smashed);
     document.getElementById('new-best')!.style.display = stats.isNewBest ? '' : 'none';
+    this.setContinueEnabled(canContinue);
+    this.continueBtn.style.display = canContinue ? '' : 'none';
     this.overScreen.classList.add('visible');
+  }
+
+  /** Enable/disable the Continue button (disabled while an ad is loading). */
+  setContinueEnabled(enabled: boolean) {
+    this.continueBtn.classList.toggle('loading', !enabled);
+    (this.continueBtn as HTMLButtonElement).disabled = !enabled;
+  }
+
+  /** Swap the Continue button label to a loading state while the ad plays. */
+  setContinueLoading(loading: boolean) {
+    this.setContinueEnabled(!loading);
+    this.continueBtn.classList.toggle('is-loading', loading);
+  }
+
+  /** Hide the whole game-over screen (used when a revive is granted). */
+  hideGameOver() {
+    this.overScreen.classList.remove('visible');
+  }
+
+  /**
+   * Show a single big countdown number ("3", "2", "1", or "GO!"). Pass an
+   * empty string to clear it. Re-triggers the pop animation each call.
+   */
+  showCountdown(text: string) {
+    if (!text) {
+      this.countdownEl.classList.remove('show');
+      this.countdownEl.textContent = '';
+      return;
+    }
+    this.countdownEl.textContent = text;
+    this.countdownEl.classList.remove('show');
+    void this.countdownEl.offsetWidth; // restart the CSS animation
+    this.countdownEl.classList.add('show');
   }
 
   setScore(score: number) {

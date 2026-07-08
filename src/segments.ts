@@ -260,4 +260,21 @@ export class SegmentSpawner {
     }
     return null;
   }
+
+  /**
+   * Clear every hazard within `ahead` meters in front of the camera (used on
+   * revive so the player doesn't instantly re-collide with the wall that just
+   * killed them). Shatters each so it reads as a clean burst, not a pop-out.
+   */
+  clearNear(camZ: number, ahead: number, shatter: ShatterSystem) {
+    for (const o of this.active) {
+      if (o.disposed || o.collided) continue;
+      if (o.z > camZ - 2 && o.z < camZ + ahead && o.anyBlockingAlive) {
+        o.forceBreak(shatter, FORWARD_DIR);
+        o.passed = true;
+      }
+    }
+  }
 }
+
+const FORWARD_DIR = new Vector3(0, 0, 1);
