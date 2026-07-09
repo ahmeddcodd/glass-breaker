@@ -525,11 +525,8 @@ export class Game {
     this.audio.unlock();
     this.ui.tapRipple(cssX, cssY);
 
-    if (this.ammo.empty) {
-      this.audio.denied();
-      this.ui.popup(0.5, 0.55, 'NO SPHERES!', 'danger');
-      return;
-    }
+    // Defensive: reaching zero ends the run, so a shot can never be fired empty.
+    if (this.ammo.empty) return;
 
     // createPickingRay wants client/CSS pixels — it applies hardware scaling
     // internally, so feeding render pixels would double-count DPR (breaks aim
@@ -689,7 +686,6 @@ export class Game {
       return;
     }
 
-    const wasEmpty = this.ammo.empty;
     const fatal = this.ammo.penalize(obstacle.collisionCost);
 
     obstacle.forceBreak(this.shatter, FORWARD);
@@ -701,20 +697,31 @@ export class Game {
     this.ui.setCombo(0, 1);
     this.ui.popup(0.5, 0.5, `-${obstacle.collisionCost}`, 'danger big');
 
-    if (wasEmpty || fatal) {
-      this.gameOver();
+    // A penalty that overdraws, or one that lands exactly on zero, both end the
+    // run here — the player crashed, so say so rather than "out of spheres".
+    if (fatal || this.ammo.empty) {
+      this.gameOver('Crashed');
     } else {
       this.checkLowAmmo();
     }
   }
 
+  /**
+   * Spheres are health (doc §14): at zero the run ends. There is no lateral
+   * control, so an empty player has no way to survive what's ahead — ending
+   * here is the honest rule, and it surfaces the Continue revive immediately
+   * instead of leaving them to drift into the next hazard.
+   */
   private checkLowAmmo() {
     this.ui.setLowAmmo(this.ammo.low);
     if (this.ammo.empty) {
-      this.ui.prompt('Out of spheres — dodge to survive!');
-    } else if (this.ammo.low && !this.lowAmmoWarned) {
+      if (this.state === 'playing') this.gameOver('Out of spheres');
+      return;
+    }
+    if (this.ammo.low && !this.lowAmmoWarned) {
       this.lowAmmoWarned = true;
-      this.ui.prompt("Don't run out!", 2200);
+      // Last warning before the run can end — state the stake, not just the risk.
+      this.ui.prompt('Low spheres!', 2600, 'Hit crystals to refill — at zero the run ends');
     }
   }
 
@@ -823,7 +830,7 @@ export class Game {
     this.state = 'playing';
   }
 
-  private gameOver() {
+  private gameOver(reason: string) {
     this.state = 'gameover';
     this.awaitingAd = false;
     this.powerups.reset();
@@ -843,6 +850,7 @@ export class Game {
         distance: this.score.distance,
         accuracy: this.score.accuracy,
         smashed: this.score.objectsSmashed,
+        reason,
       },
       playables.adsAvailable // Continue shown whenever a (real or simulated) ad is available
     );

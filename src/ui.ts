@@ -5,6 +5,8 @@ export interface GameOverStats {
   distance: number;
   accuracy: number;
   smashed: number;
+  /** Why the run ended — shown under the title so the ending never reads abrupt. */
+  reason?: string;
 }
 
 // All UI is a DOM overlay (doc §24-25): crisper text than in-scene UI and a
@@ -104,6 +106,7 @@ export class UI {
       </div>
       <div class="screen" id="gameover-screen">
         <div class="gameover-title">Run Over</div>
+        <div class="gameover-reason" id="gameover-reason"></div>
         <div class="final-score-label" style="margin-top:4vh">Score</div>
         <div class="final-score" id="final-score">0</div>
         <div class="new-best" id="new-best" style="display:none">New Best!</div>
@@ -200,6 +203,7 @@ export class UI {
     this.hudEl.classList.remove('visible');
     this.setLowAmmo(false);
     this.prompt('');
+    document.getElementById('gameover-reason')!.textContent = stats.reason ?? '';
     document.getElementById('final-score')!.textContent = String(stats.score);
     document.getElementById('stat-best')!.textContent = String(stats.best);
     document.getElementById('stat-distance')!.textContent = `${Math.round(stats.distance)}m`;

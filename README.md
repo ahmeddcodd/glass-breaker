@@ -37,6 +37,8 @@ YouTube, …). `src/playables.ts` wraps every `bridge` call:
   `bridge.storage` (platform cloud where available, `local_storage` otherwise).
 - Run scores are reported with `bridge.leaderboards.setScore('glass-breaker', …)` at game over
   (a safe no-op on platforms without leaderboards).
+- **Ending a run:** spheres double as health — a run ends either by crashing into a hazard or by
+  spending your last sphere. Both show the score screen and offer the Continue revive below.
 - **Continue (rewarded-ad revive):** on death, a Continue button offers a rewarded ad
   (`bridge.advertisement.showRewarded()`); the revive is granted **only** on the `rewarded`
   state (never on `closed`/`failed`). On reward the player revives in place — spheres refilled,

@@ -24,7 +24,6 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #010409;
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -36,6 +35,35 @@ body {
   touch-action: none;
 }
 
+html {
+  background: #050c1a; /* fallback ink behind everything */
+}
+
+/* Themed backdrop filling the letterbox on wide screens — Playgama requires a
+   filling background, not black bars. Pure CSS in the Crystal Wake palette
+   (config.ts ZONES[0]); the project ships zero binary assets. Painted on body
+   itself so nothing can stack over it, and fixed so it never scrolls or shifts.
+   On portrait phones the stage covers this entirely. */
+body {
+  background:
+    /* diagonal prism striping — texture, so the bars read as intentional */
+    repeating-linear-gradient(
+      115deg,
+      transparent 0 44px,
+      rgba(143, 236, 255, 0.045) 44px 46px,
+      transparent 46px 90px
+    ),
+    /* cyan glow blooming out of the left bar */
+    radial-gradient(46vw 62vh at 20% 32%, rgba(63, 210, 255, 0.16), transparent 70%),
+    /* violet counter-glow on the right, echoing Prism Tunnel */
+    radial-gradient(44vw 60vh at 80% 68%, rgba(180, 107, 255, 0.14), transparent 72%),
+    /* corner falloff keeps the backdrop quieter than the stage it frames */
+    radial-gradient(120vw 110vh at 50% 50%, transparent 30%, rgba(3, 8, 18, 0.55) 100%),
+    /* base: fog blue holding through the bars, easing to ink at the corners */
+    radial-gradient(135vw 135vh at 50% 45%, #162c49 0%, #0b1a2f 48%, #050c1a 100%);
+  background-attachment: fixed;
+}
+
 /* 9:16 stage — fills portrait screens, letterboxes on wide screens */
 #stage {
   position: relative;
@@ -44,6 +72,15 @@ body {
   margin: 0 auto;
   overflow: hidden;
   background: #04070f;
+}
+
+/* Seam treatment: only when the viewport is wider than 9:16 is there any
+   letterbox to frame. Portrait phones fill the screen and stay untouched. */
+@media (min-aspect-ratio: 9 / 16) {
+  #stage {
+    box-shadow: 0 0 0 1px rgba(127, 230, 255, 0.22), 0 0 120px rgba(40, 140, 200, 0.5),
+      0 0 40px rgba(10, 30, 50, 0.9);
+  }
 }
 
 #game-canvas {
@@ -548,6 +585,21 @@ body {
   text-transform: uppercase;
   color: var(--ui-aqua);
   text-shadow: 0 0 22px rgba(143, 236, 255, 0.55);
+}
+
+/* Cause of death, under the title. Empty string collapses to nothing. */
+.gameover-reason {
+  margin-top: 1.4vh;
+  font-size: clamp(11px, 1.7vh, 16px);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ui-dim);
+  text-shadow: 0 0 10px rgba(127, 230, 255, 0.35);
+}
+
+.gameover-reason:empty {
+  display: none;
 }
 
 .final-score {
