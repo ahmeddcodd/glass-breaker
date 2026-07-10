@@ -15,6 +15,18 @@ import { BEST_SCORE_KEY } from './config';
 // Minimal typing of the Bridge surface we use (plain-JS build, Promise-based).
 type RewardedState = 'loading' | 'opened' | 'closed' | 'rewarded' | 'failed';
 
+/** Bridge's LEADERBOARD_TYPE constants (verified against the shipped SDK). */
+export type LeaderboardType = 'not_available' | 'in_game' | 'native' | 'native_popup';
+
+/** One normalized leaderboard row, whatever shape the platform hands back. */
+export interface LeaderboardEntry {
+  rank: number;
+  name: string;
+  score: number;
+  /** True for the signed-in player's own row, when the platform marks it. */
+  isPlayer: boolean;
+}
+
 interface BridgeSdk {
   initialize(): Promise<void>;
   platform: {
@@ -35,8 +47,12 @@ interface BridgeSdk {
     on(event: string, callback: (state: RewardedState) => void): void;
   };
   leaderboards: {
-    type: string; // 'not_available' | 'in_game' | 'native' | 'native_popup'
+    type: LeaderboardType;
     setScore(leaderboardId: string, score: number): Promise<void>;
+    /** 'in_game' platforms: fetch rows so the game can render them itself. */
+    getEntries(leaderboardId: string): Promise<unknown>;
+    /** 'native_popup' platforms: the host draws its own leaderboard overlay. */
+    showNativePopup(leaderboardId: string): Promise<void>;
   };
   EVENT_NAME: {
     PAUSE_STATE_CHANGED: string;
@@ -267,6 +283,103 @@ export function sendScore(value: number) {
     void sdk.leaderboards.setScore(LEADERBOARD_ID, Math.max(0, Math.floor(value))).catch(() => {});
   } catch {
     /* leaderboards unsupported — safe no-op */
+  }
+}
+
+// ------------------------------------------------------------- leaderboard
+
+/**
+ * How this platform surfaces its leaderboard:
+ *  - 'native_popup' → call showLeaderboard(); the host draws its own overlay
+ *  - 'in_game'      → call fetchLeaderboard(); we render the rows ourselves
+ *  - 'native'       → the host shows it in its own chrome; no in-game entry point
+ *  - 'not_available'→ nothing to show
+ */
+export function leaderboardType(): LeaderboardType {
+  if (!ready || !sdk) return 'not_available';
+  try {
+    return sdk.leaderboards.type ?? 'not_available';
+  } catch {
+    return 'not_available';
+  }
+}
+
+/**
+ * True when the game should offer a "Leaderboard" button. Any type other than
+ * 'not_available' gets one: platform QA expects a leaderboard button in-game,
+ * and `openLeaderboard()` handles every type (native popup, or our own panel
+ * fed by getEntries) — so the button is never a dead end.
+ */
+export function leaderboardAvailable(): boolean {
+  return leaderboardType() !== 'not_available';
+}
+
+/** Ask the host to display its own leaderboard overlay ('native_popup'). */
+export async function showLeaderboard(): Promise<boolean> {
+  if (!ready || !sdk) return false;
+  try {
+    await sdk.leaderboards.showNativePopup(LEADERBOARD_ID);
+    return true;
+  } catch {
+    return false; // declined / unsupported — caller keeps its own UI closed
+  }
+}
+
+/**
+ * Coerce one platform row into our shape. Bridge does not normalize this — each
+ * platform returns its own field names — so accept the common spellings and
+ * fall back rather than throw on an unexpected payload.
+ */
+function coerceEntry(raw: unknown, index: number): LeaderboardEntry {
+  const e = (raw ?? {}) as Record<string, unknown>;
+  const num = (...keys: string[]): number | null => {
+    for (const k of keys) {
+      const v = e[k];
+      if (typeof v === 'number' && Number.isFinite(v)) return v;
+      if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v);
+    }
+    return null;
+  };
+  const str = (...keys: string[]): string | null => {
+    for (const k of keys) {
+      const v = e[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return null;
+  };
+  return {
+    rank: num('rank', 'position', 'place') ?? index + 1,
+    name: str('name', 'playerName', 'userName', 'nickname', 'title') ?? 'Player',
+    score: num('score', 'value', 'points') ?? 0,
+    isPlayer: e.isPlayer === true || e.isCurrentPlayer === true || e.self === true,
+  };
+}
+
+/**
+ * Fetch leaderboard rows for 'in_game' platforms. Resolves `null` when the
+ * platform can't provide them (unsupported, offline, rejected) so the caller
+ * can show an honest "unavailable" state rather than an empty board.
+ */
+export async function fetchLeaderboard(): Promise<LeaderboardEntry[] | null> {
+  if (!ready || !sdk) return null;
+  try {
+    const raw = await sdk.leaderboards.getEntries(LEADERBOARD_ID);
+    // Platforms return either an array, or an object wrapping one.
+    let rows: unknown[] | null = null;
+    if (Array.isArray(raw)) rows = raw;
+    else if (raw && typeof raw === 'object') {
+      for (const key of ['entries', 'players', 'items', 'leaderboard']) {
+        const v = (raw as Record<string, unknown>)[key];
+        if (Array.isArray(v)) {
+          rows = v;
+          break;
+        }
+      }
+    }
+    if (!rows) return null;
+    return rows.map(coerceEntry).sort((a, b) => a.rank - b.rank);
+  } catch {
+    return null;
   }
 }
 

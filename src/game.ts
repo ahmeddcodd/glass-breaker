@@ -159,6 +159,11 @@ export class Game {
       if (this.paused || this.awaitingAd || this.state !== 'gameover') return;
       void this.watchAdAndRevive();
     };
+    this.ui.onLeaderboard = () => {
+      if (this.paused) return;
+      this.audio.uiTap();
+      void this.openLeaderboard();
+    };
     this.projectiles.onMiss = () => {
       if (this.state !== 'playing') return;
       this.score.miss();
@@ -248,7 +253,7 @@ export class Game {
     }
 
     this.ui.showStart();
-    this.ui.setSettingsButtonVisible(true); // gear available on the start screen
+    this.setMenuButtonsVisible(true); // gear + leaderboard on the start screen
     this.corridor.setRunStart(-this.debugDist);
     this.corridor.applyZoneBlend(this.debugDist);
     this.updateZone(this.debugDist);
@@ -809,7 +814,7 @@ export class Game {
     this.displayScore = 0;
 
     this.ui.showPlaying();
-    this.ui.setSettingsButtonVisible(false); // hide the gear during active play
+    this.setMenuButtonsVisible(false); // hide menu buttons during active play
     this.ui.showCountdown('');
     this.awaitingAd = false;
     this.ui.setLowAmmo(false);
@@ -833,6 +838,9 @@ export class Game {
   private gameOver(reason: string) {
     this.state = 'gameover';
     this.awaitingAd = false;
+    // updatePlaying (and with it refreshHud) stops here, so paint the true final
+    // ammo now — otherwise the HUD freezes a stale count behind the panel.
+    this.ui.setAmmo(this.ammo.count);
     this.powerups.reset();
     this.ui.setPowerUp(null, 0);
     this.ui.setShield(false);
@@ -854,7 +862,7 @@ export class Game {
       },
       playables.adsAvailable // Continue shown whenever a (real or simulated) ad is available
     );
-    this.ui.setSettingsButtonVisible(true); // gear available on the game-over screen
+    this.setMenuButtonsVisible(true); // gear + leaderboard on the game-over screen
   }
 
   /**
@@ -896,7 +904,7 @@ export class Game {
 
     this.ui.hideGameOver();
     this.ui.showPlaying();
-    this.ui.setSettingsButtonVisible(false); // hide the gear back into active play
+    this.setMenuButtonsVisible(false); // hide menu buttons back into active play
     this.ui.setLowAmmo(false);
     this.ui.setCombo(0, 1);
     this.ui.prompt('');
@@ -905,6 +913,32 @@ export class Game {
     this.vibrate(40);
 
     this.beginCountdown();
+  }
+
+  /**
+   * Gear + trophy share a visibility lifecycle: shown on the start/game-over
+   * screens, hidden during active play. The trophy additionally requires a
+   * platform that can actually show a leaderboard, so it never becomes a
+   * dead button on hosts without one.
+   */
+  private setMenuButtonsVisible(visible: boolean) {
+    this.ui.setSettingsButtonVisible(visible);
+    this.ui.setLeaderboardButtonVisible(visible && playables.leaderboardAvailable());
+  }
+
+  /**
+   * The platform-required leaderboard entry point. On 'native_popup' hosts the
+   * platform draws its own overlay; on 'in_game' hosts we render the rows in
+   * our own panel. If a native popup fails to open, fall back to the in-game
+   * panel so the button is never a dead end.
+   */
+  private async openLeaderboard() {
+    const type = playables.leaderboardType();
+    if (type === 'native_popup' || type === 'native') {
+      if (await playables.showLeaderboard()) return;
+    }
+    this.ui.openLeaderboard();
+    this.ui.setLeaderboardEntries(await playables.fetchLeaderboard());
   }
 
   private beginCountdown() {

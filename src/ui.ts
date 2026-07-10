@@ -1,3 +1,5 @@
+import type { LeaderboardEntry } from './playables';
+
 export interface GameOverStats {
   score: number;
   best: number;
@@ -17,6 +19,8 @@ export class UI {
   onStart: () => void = () => {};
   onRestart: () => void = () => {};
   onContinue: () => void = () => {};
+  /** Fired when the player presses the leaderboard button. */
+  onLeaderboard: () => void = () => {};
   /** Fired when a settings toggle changes: which one and its new value. */
   onSettingChange: (key: AudioSetting, value: boolean) => void = () => {};
 
@@ -47,6 +51,9 @@ export class UI {
   private settingsBtn: HTMLElement;
   private settingsPanel: HTMLElement;
   private settingsNote: HTMLElement;
+  private leaderboardBtn: HTMLElement;
+  private leaderboardPanel: HTMLElement;
+  private leaderboardBody: HTMLElement;
   private toggles: Record<AudioSetting, HTMLElement>;
   private promptTimer: number | null = null;
   private lastPowerLabel: string | null = null;
@@ -89,6 +96,16 @@ export class UI {
       <button id="settings-btn" aria-label="Settings">
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
       </button>
+      <button id="leaderboard-btn" aria-label="Leaderboard">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"></path><path d="M17 5h2a2 2 0 0 1 0 4h-.5"></path><path d="M7 5H5a2 2 0 0 0 0 4h.5"></path></svg>
+      </button>
+      <div id="leaderboard-panel">
+        <div id="leaderboard-card">
+          <div id="leaderboard-title">Leaderboard</div>
+          <div id="leaderboard-body"></div>
+          <button class="btn" id="leaderboard-close">Done</button>
+        </div>
+      </div>
       <div id="settings-panel">
         <div id="settings-card">
           <div id="settings-title">Settings</div>
@@ -152,6 +169,9 @@ export class UI {
     this.settingsBtn = get('settings-btn');
     this.settingsPanel = get('settings-panel');
     this.settingsNote = get('settings-note');
+    this.leaderboardBtn = get('leaderboard-btn');
+    this.leaderboardPanel = get('leaderboard-panel');
+    this.leaderboardBody = get('leaderboard-body');
     this.toggles = { sfx: get('toggle-sfx'), music: get('toggle-music'), ambient: get('toggle-ambient') };
 
     this.startScreen.addEventListener('pointerdown', () => this.onStart());
@@ -162,6 +182,20 @@ export class UI {
     this.continueBtn.addEventListener('pointerdown', (ev) => {
       ev.stopPropagation();
       this.onContinue();
+    });
+
+    // Leaderboard: the platform-required entry point. The game decides what the
+    // press does (native popup vs. in-game panel) via onLeaderboard.
+    this.leaderboardBtn.addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation();
+      this.onLeaderboard();
+    });
+    get('leaderboard-close').addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation();
+      this.closeLeaderboard();
+    });
+    this.leaderboardPanel.addEventListener('pointerdown', (ev) => {
+      if (ev.target === this.leaderboardPanel) this.closeLeaderboard(); // backdrop tap
     });
 
     // Settings: gear opens the panel; each toggle fires onSettingChange; the
@@ -264,6 +298,49 @@ export class UI {
   setSettingsButtonVisible(visible: boolean) {
     this.settingsBtn.classList.toggle('visible', visible);
     if (!visible) this.closeSettings();
+  }
+
+  // ----------------------------------------------------------- leaderboard
+
+  /** Show/hide the trophy button. Hidden during play, and on platforms with no
+   *  leaderboard at all (or when the host draws its own chrome). */
+  setLeaderboardButtonVisible(visible: boolean) {
+    this.leaderboardBtn.classList.toggle('visible', visible);
+    if (!visible) this.closeLeaderboard();
+  }
+
+  /** Open the in-game panel in its loading state (rows arrive asynchronously). */
+  openLeaderboard() {
+    this.leaderboardBody.innerHTML = '<div class="lb-state">Loading…</div>';
+    this.leaderboardPanel.classList.add('visible');
+  }
+
+  closeLeaderboard() {
+    this.leaderboardPanel.classList.remove('visible');
+  }
+
+  /** Render fetched rows, or an honest empty/unavailable state. */
+  setLeaderboardEntries(entries: LeaderboardEntry[] | null) {
+    if (!entries) {
+      this.leaderboardBody.innerHTML = '<div class="lb-state">Leaderboard unavailable</div>';
+      return;
+    }
+    if (!entries.length) {
+      this.leaderboardBody.innerHTML = '<div class="lb-state">No scores yet — be the first!</div>';
+      return;
+    }
+    const esc = (s: string) =>
+      s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+    this.leaderboardBody.innerHTML = entries
+      .slice(0, 20)
+      .map(
+        (e) => `<div class="lb-row${e.isPlayer ? ' me' : ''}">
+            <span class="lb-rank">${e.rank}</span>
+            <span class="lb-name">${esc(e.name)}</span>
+            <span class="lb-score">${e.score.toLocaleString()}</span>
+          </div>`
+      )
+      .join('');
   }
 
   /**

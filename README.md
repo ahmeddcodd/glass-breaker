@@ -37,6 +37,11 @@ YouTube, …). `src/playables.ts` wraps every `bridge` call:
   `bridge.storage` (platform cloud where available, `local_storage` otherwise).
 - Run scores are reported with `bridge.leaderboards.setScore('glass-breaker', …)` at game over
   (a safe no-op on platforms without leaderboards).
+- **Leaderboard button** (trophy, bottom-left beside the gear, on the start/game-over screens):
+  on `native_popup`/`native` platforms it opens the host's own overlay
+  (`bridge.leaderboards.showNativePopup()`); on `in_game` platforms the game fetches rows with
+  `getEntries()` and renders them itself. Hidden entirely when `leaderboards.type` is
+  `not_available` (e.g. the local mock), so it is never a dead button.
 - **Ending a run:** spheres double as health — a run ends either by crashing into a hazard or by
   spending your last sphere. Both show the score screen and offer the Continue revive below.
 - **Continue (rewarded-ad revive):** on death, a Continue button offers a rewarded ad

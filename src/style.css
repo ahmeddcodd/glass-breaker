@@ -870,6 +870,134 @@ body {
   transform: scale(0.9);
 }
 
+/* ---------- leaderboard: trophy button + panel ---------- */
+
+/* Sits beside the gear (which is at left: 4%). Same circular chrome. */
+#leaderboard-btn {
+  position: absolute;
+  left: calc(max(4%, env(safe-area-inset-left)) + 56px);
+  bottom: max(3.5vh, env(safe-area-inset-bottom));
+  width: 46px;
+  height: 46px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--ui-gold);
+  background: rgba(8, 20, 34, 0.55);
+  border: 1px solid rgba(255, 217, 119, 0.42);
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 25;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 0 16px rgba(255, 217, 119, 0.32);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+#leaderboard-btn.visible {
+  display: flex;
+}
+
+#leaderboard-btn:active {
+  transform: scale(0.9);
+}
+
+#leaderboard-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 6%;
+  pointer-events: auto;
+  background: rgba(2, 6, 14, 0.66);
+  backdrop-filter: blur(3px);
+}
+
+#leaderboard-panel.visible {
+  display: flex;
+}
+
+#leaderboard-card {
+  width: min(88%, 380px);
+  padding: 4vh 6%;
+  background: linear-gradient(180deg, rgba(14, 30, 48, 0.98), rgba(8, 18, 32, 0.98));
+  border: 1px solid rgba(255, 217, 119, 0.26);
+  border-radius: 20px;
+  box-shadow: 0 0 40px rgba(20, 60, 90, 0.6);
+}
+
+#leaderboard-title {
+  text-align: center;
+  font-size: clamp(20px, 3.2vh, 30px);
+  font-weight: 900;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ui-gold);
+  text-shadow: 0 0 16px rgba(255, 217, 119, 0.5);
+  margin-bottom: 3vh;
+}
+
+#leaderboard-body {
+  max-height: 44vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lb-row {
+  display: flex;
+  align-items: center;
+  gap: 4%;
+  padding: 1.3vh 0;
+  border-bottom: 1px solid rgba(127, 230, 255, 0.12);
+  font-size: clamp(13px, 2vh, 18px);
+  color: var(--ui-white);
+}
+
+.lb-row.me {
+  color: var(--ui-gold);
+  font-weight: 800;
+}
+
+.lb-rank {
+  flex: 0 0 2.4em;
+  color: var(--ui-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-row.me .lb-rank {
+  color: var(--ui-gold);
+}
+
+.lb-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-score {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-state {
+  padding: 4vh 0;
+  text-align: center;
+  font-size: clamp(12px, 1.9vh, 17px);
+  letter-spacing: 0.1em;
+  color: var(--ui-dim);
+}
+
+#leaderboard-close {
+  margin-top: 3.5vh;
+  width: 100%;
+  padding: 1.6vh 0;
+}
+
 #settings-panel {
   position: absolute;
   inset: 0;
